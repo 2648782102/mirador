@@ -2,3 +2,6 @@ node_modules/
 .atl/
 .pi/
 design/**/.screenshots/
+# Maintainers keep both folders as nested clones of private repositories; they are never committed here.
+/odd/tasks
+/design

@@ -3,7 +3,7 @@
 // odd/README.md, the method, and not the .gitattributes that marks the exclusions.
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { extractHead, notTheSource, trackedUnder } from './helpers/export-archive.ts';
 
@@ -24,6 +24,12 @@ test('the export leaves out odd/tasks/, design/ and the informe; this repository
   assert.ok(trackedUnder('odd/tasks').filter((path) => path.endsWith('.md')).length > 0, 'HEAD still tracks the task files');
   assert.ok(trackedUnder('design').length > 0, 'HEAD still tracks design/');
   assert.deepEqual(trackedUnder('docs/informe-2026-11-11.md'), ['docs/informe-2026-11-11.md'], 'HEAD still tracks the informe');
+});
+
+test('.gitignore ignores /odd/tasks and /design, without a trailing slash, for the private nested clones', () => {
+  const lines = readFileSync(join(import.meta.dirname, '..', '.gitignore'), 'utf8').split('\n');
+  assert.ok(lines.includes('/odd/tasks'), '.gitignore has the line /odd/tasks');
+  assert.ok(lines.includes('/design'), '.gitignore has the line /design');
 });
 
 test('the export carries odd/README.md, the method, and not the .gitattributes with the exclusions', { skip }, () => {
