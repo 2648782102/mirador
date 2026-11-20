@@ -100,6 +100,8 @@ Linux is supported, macOS is experimental, and Windows works through WSL2. Mirad
 
 ### Fixed
 
+- A `shell` config other than bash now falls back to `/bin/bash` with a startup line that says agent terminals need bash;
+  previously it broke agent terminals later with no clear cause.
 - The agent terminal tests no longer hide a failed assertion when their cleanup also fails; both errors are
   reported.
 - `mirador stop` left agents running, so the next start ran each project twice; a terminal killed for lack of memory

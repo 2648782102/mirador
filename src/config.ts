@@ -151,6 +151,20 @@ function savedOwnerName(value: unknown): { ownerName?: string; problems: string[
   return { problems: [`ownerName must be a name of 1 to ${MAX_OWNER_NAME} characters on one line, without < or >; "${DEFAULT_OWNER_NAME}" applies`] };
 }
 
+/**
+ * The saved `shell` when it can run agent terminals. They start with
+ * `bash --rcfile <agent.bashrc> -i`, so the shell must be bash; any other value
+ * falls back to `/bin/bash` with one line saying so.
+ */
+function savedShell(value: unknown): { shell: string; problems: string[] } {
+  if (value === undefined || value === null) return { shell: '/bin/bash', problems: [] };
+  if (typeof value === 'string' && /(^|[/\\])bash(\.exe)?$/.test(value.trim())) return { shell: value.trim(), problems: [] };
+  return {
+    shell: '/bin/bash',
+    problems: ['shell must be bash, because agent terminals start with `bash --rcfile`; /bin/bash applies'],
+  };
+}
+
 /** The config as loaded, plus what Mirador could not read in its `workspaces`. */
 export interface LoadedConfig extends MiradorConfig {
   /**
@@ -260,10 +274,12 @@ export async function loadConfig(path = configPath(), env = process.env): Promis
   const mode = savedMode(rest.mode);
   const browser = savedBrowser(browserValue);
   const owner = savedOwnerName(ownerValue);
+  const shell = savedShell(rest.shell);
   // Only an explicit false turns the attention bridge off.
   return {
     ...base,
     ...rest,
+    shell: shell.shell,
     workspaces: migrated,
     attentionBridge: rest.attentionBridge !== false,
     mode: mode.mode,
@@ -272,7 +288,14 @@ export async function loadConfig(path = configPath(), env = process.env): Promis
     ...(browser.browser ? { browser: browser.browser } : {}),
     ...(owner.ownerName ? { ownerName: owner.ownerName } : {}),
     workspaceProblems: loaded.problems,
-    launchProblems: [...launches.problems, ...idleSleep.problems, ...mode.problems, ...browser.problems, ...owner.problems],
+    launchProblems: [
+      ...launches.problems,
+      ...idleSleep.problems,
+      ...mode.problems,
+      ...browser.problems,
+      ...owner.problems,
+      ...shell.problems,
+    ],
   };
 }
 

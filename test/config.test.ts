@@ -156,3 +156,24 @@ test('idleSleepHours (R5b idle sleep) defaults to 4, takes 0 (off) up to 168, an
     assert.deepEqual(config.launchProblems, ['idleSleepHours must be a number of hours from 0 (off) to 168; the default (4) applies']);
   }
 });
+
+// regression: #10
+test('shell falls back to bash, with a startup problem, when agent terminals could not use it', async () => {
+  const defaults = await loadConfig(await configFile('shell-none', { port: 5000 }), { HOME: home });
+  assert.equal(defaults.shell, '/bin/bash');
+  assert.deepEqual(defaults.launchProblems, []);
+
+  for (const shell of ['/bin/bash', '/usr/local/bin/bash', 'C:\\Program Files\\Git\\bin\\bash.exe']) {
+    const config = await loadConfig(await configFile(`shell-ok-${shell.length}`, { shell }), { HOME: home });
+    assert.equal(config.shell, shell);
+    assert.deepEqual(config.launchProblems, []);
+  }
+
+  for (const shell of ['zsh', '/bin/zsh', 'fish', '/usr/bin/fish', '', 7]) {
+    const config = await loadConfig(await configFile(`shell-bad-${JSON.stringify(shell)}`, { shell }), { HOME: home });
+    assert.equal(config.shell, '/bin/bash');
+    assert.deepEqual(config.launchProblems, [
+      'shell must be bash, because agent terminals start with `bash --rcfile`; /bin/bash applies',
+    ]);
+  }
+});
