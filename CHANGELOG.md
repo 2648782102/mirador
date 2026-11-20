@@ -100,6 +100,8 @@ Linux is supported, macOS is experimental, and Windows works through WSL2. Mirad
 
 ### Fixed
 
+- The stand-in agent scripts in five tests use `sleep` from `PATH` instead of `/usr/bin/sleep`, so the suite can run
+  on macOS, where sleep lives at `/bin/sleep`.
 - A `shell` config other than bash now falls back to `/bin/bash` with a startup line that says agent terminals need bash;
   previously it broke agent terminals later with no clear cause.
 - The agent terminal tests no longer hide a failed assertion when their cleanup also fails; both errors are

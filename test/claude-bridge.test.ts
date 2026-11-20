@@ -156,7 +156,7 @@ before(async () => {
     '#!/bin/sh',
     '{ printf \'%s\\n\' "${0##*/}"; for word in "$@"; do printf \'%s\\n\' "$word"; done; } > "$HOME/args-$HERDR_PANE_ID.tmp"',
     '/bin/mv -f "$HOME/args-$HERDR_PANE_ID.tmp" "$HOME/args-$HERDR_PANE_ID"',
-    'exec /usr/bin/sleep 600',
+    'exec sleep 600',
     '',
   ].join('\n'), { mode: 0o755 });
   await mkdir(join(scratch, 'gentle-ai'), { recursive: true });
