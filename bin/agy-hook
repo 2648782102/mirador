@@ -1,0 +1,104 @@
+#!/usr/bin/env node
+// Mirador's agy (Antigravity CLI) hook. Mirador starts agy with
+// `--add-dir <runtime>/mirador/herdr/agy-workspace` (src/attention/agy-hooks.ts), whose
+// `.agents/hooks.json` runs this script as `agy-hook <event>` with the event's JSON on stdin
+// (https://antigravity.google/docs/hooks). It reports the agent's attention state as the gentle-shell
+// bridge does, as one herdr report-metadata line to $HERDR_SOCKET_PATH for pane $HERDR_PANE_ID, from
+// source mirador:attention:
+//   PreInvocation                working     clears blocked, prompt and finished
+//   PreToolUse ask_question,     waiting     prompt=<the question, or the permission's reason>
+//              ask_permission
+//   Stop                         finished    finished=<turn id>
+// Each report carries session=<conversationId>, which Mirador records to resume with `--conversation <id>`.
+// agy wants a JSON answer on stdout: `{"decision":"allow"}` for PreToolUse (go on to the next hook or agy's
+// own policy), `{"decision":"stop"}` for Stop (its `decision` is required; anything but "continue" lets agy
+// stop), `{}` otherwise. Like bin/claude-hook it must never get in the agent's way: it prints nothing
+// else, always exits 0 and gives up after one second.
+import { createConnection } from 'node:net';
+
+const MAX_INPUT_BYTES = 256 * 1024;
+const MAX_LINE_BYTES = 4096;
+/** Mirador refuses a token value over 512 characters, so the message is cut before that. */
+const MAX_MESSAGE = 500;
+const TIMEOUT_MS = 1000;
+const SOURCE = 'mirador:attention';
+const PANE = /^[\w-]{1,64}$/;
+/** As SESSION_ID in src/agents/catalog.ts: a letter or digit first, so never an option. */
+const SESSION_ID = /^[A-Za-z0-9][\w-]{0,127}$/;
+const DEFAULT_PROMPT = 'Antigravity needs your input';
+
+const oneLine = (value) => (typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, MAX_MESSAGE) : '');
+
+/** What a tool that waits for an answer asks: its first question, or why it asks for a permission. */
+function promptOf(tool) {
+  const args = typeof tool.args === 'object' && tool.args !== null ? tool.args : {};
+  if (tool.name === 'ask_question') return oneLine(Array.isArray(args.questions) ? args.questions[0]?.question : undefined);
+  return oneLine(args.Reason) || oneLine([args.Action, args.Target].filter((word) => typeof word === 'string').join(' '));
+}
+
+/** The tokens and cleared tokens `input` reports for `name`, or null when it reports nothing. */
+function reportOf(name, input, seq) {
+  let event;
+  try {
+    event = JSON.parse(input);
+  } catch {
+    return null;
+  }
+  if (typeof event !== 'object' || event === null || Array.isArray(event)) return null;
+  const session = typeof event.conversationId === 'string' && SESSION_ID.test(event.conversationId) ? { session: event.conversationId } : {};
+  switch (name) {
+    case 'PreInvocation':
+      return { tokens: session, clear: ['blocked', 'prompt', 'finished'] };
+    case 'PreToolUse': {
+      const tool = typeof event.toolCall === 'object' && event.toolCall !== null ? event.toolCall : {};
+      if (tool.name !== 'ask_question' && tool.name !== 'ask_permission') return null;
+      return { tokens: { ...session, prompt: promptOf(tool) || DEFAULT_PROMPT }, clear: ['blocked', 'finished'] };
+    }
+    case 'Stop':
+      return { tokens: { ...session, finished: String(seq) }, clear: ['blocked', 'prompt'] };
+    default:
+      return null;
+  }
+}
+
+function send(socket, line) {
+  const conn = createConnection(socket);
+  const timer = setTimeout(() => conn.destroy(), TIMEOUT_MS);
+  conn.on('error', () => {});
+  conn.on('close', () => clearTimeout(timer));
+  conn.on('connect', () => conn.end(line));
+}
+
+function main() {
+  const name = process.argv[2];
+  // The answer first (stdout to a pipe is written at once): agy gets it even when nothing else works.
+  process.stdout.write(name === 'PreToolUse' ? '{"decision":"allow"}' : name === 'Stop' ? '{"decision":"stop"}' : '{}');
+  const pane = process.env.HERDR_PANE_ID;
+  const socket = process.env.HERDR_SOCKET_PATH;
+  if (!pane || !PANE.test(pane) || !socket) return;
+  setTimeout(() => process.exit(0), TIMEOUT_MS).unref();
+  let input = '';
+  let size = 0;
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('error', () => {});
+  process.stdin.on('data', (chunk) => {
+    size += Buffer.byteLength(chunk);
+    if (size > MAX_INPUT_BYTES) return process.stdin.destroy();
+    input += chunk;
+  });
+  process.stdin.on('end', () => {
+    // Numbered from the clock, as the bridge's reports are; agy runs one hook at a time.
+    const seq = Date.now();
+    const report = reportOf(name, input, seq);
+    if (!report) return;
+    const line = JSON.stringify({ v: 1, cmd: 'report-metadata', pane, source: SOURCE, seq, ttlMs: null, ...report }) + '\n';
+    if (Buffer.byteLength(line) <= MAX_LINE_BYTES) send(socket, line);
+  });
+}
+
+try {
+  main();
+} catch {
+  // Best effort only: a report that cannot be sent is dropped.
+}
+process.exitCode = 0;

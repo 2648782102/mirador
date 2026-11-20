@@ -1,0 +1,39 @@
+Mirador
+Copyright 2026 Matías Barría
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The ZURAI name and logo (public/brand/) are trademarks of ZURAI SpA.
+They are not licensed under the Apache License, Version 2.0.
+
+Third-party material
+
+- Simple Icons (https://simpleicons.org), CC0 1.0: the path data of the Claude Code, OpenCode, Google Gemini and Kimi logos in public/icons/agents.js.
+- xterm.js and its fit and web-links addons (https://github.com/xtermjs/xterm.js), MIT: the terminal, installed from npm and served from node_modules.
+- Gentleman Sexy palette (https://github.com/Gentleman-Programming/gentle-shell), MIT: the colours of the Gentleman theme in public/styles.css, taken from themes/Gentleman-Sexy.json in the gentle-pi package.
+
+The agents' logos are trademarks of their owners and are used only to identify each agent.
+
+Gentleman Sexy palette licence:
+
+MIT License
+
+Copyright (c) 2025 Mario Zechner
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

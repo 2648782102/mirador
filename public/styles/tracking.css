@@ -1,0 +1,300 @@
+/* Global tracking view (public/features/tracking.js) and its top-bar switch. */
+
+/* The development layout sets display: grid, which would beat the hidden attribute. */
+#layout[hidden],
+.app-view[hidden] { display: none; }
+
+/* The view fills the window under the topbar (the body's flex column, styles.css): no page
+   scroll, each lane and dock pane scrolls on its own. */
+.app-view {
+  overflow: hidden;
+  background: var(--canvas);
+}
+
+/* Three bands: strip, lanes, dock. The dock shows only its head while collapsed. */
+.tracking {
+  height: 100%;
+  padding: 12px 16px 16px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) clamp(180px, 32vh, 300px);
+  gap: 12px;
+}
+.tracking.dock-closed { grid-template-rows: auto minmax(0, 1fr) auto; }
+.tracking-small { font-size: var(--fs-sm); }
+.tracking-empty { margin: 0; }
+.tracking-error { margin: 0; color: var(--danger); }
+
+/* Strip: title and date, today's counts, then the night shift (styles/night.css). */
+.tracking-top { display: grid; gap: 8px; min-width: 0; }
+.tracking-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sheet);
+  box-shadow: var(--shadow-sheet);
+}
+.tracking-strip-title h1 { margin: 0; font-size: var(--fs-title); }
+.tracking-strip-title p { margin: 0; }
+/* Stacked, so the strip keeps to one line on a laptop screen. */
+.tracking-counts { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; font-size: var(--fs-sm); color: var(--muted); }
+.tracking-counts strong { font-size: var(--fs-ui); color: var(--text); font-variant-numeric: tabular-nums; }
+.tracking-notices:empty { display: none; }
+.tracking-notices { display: grid; gap: 4px; }
+
+/* Lanes: by what each agent needs from you. */
+.tracking-lanes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.25fr);
+  gap: 12px;
+  min-height: 0;
+}
+.tracking-lane {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sheet);
+  box-shadow: var(--shadow-sheet);
+}
+.tracking-lane-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  border-top: 3px solid var(--muted);
+  border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
+}
+.tracking-lane.needs .tracking-lane-head { border-top-color: var(--warn); }
+.tracking-lane.review .tracking-lane-head { border-top-color: var(--ok); }
+.tracking-lane.working .tracking-lane-head { border-top-color: var(--accent); }
+.tracking-lane-head h2,
+.tracking-dock-head h2 { margin: 0; font-size: var(--fs-sm); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.tracking-lane-glyph { --icon: var(--icon-sm); }
+.needs .tracking-lane-glyph { color: var(--warn); }
+.review .tracking-lane-glyph { color: var(--ok); }
+.working .tracking-lane-glyph { color: var(--accent); }
+
+/* A count pill: filled for what needs action, plain for what Mirador did. */
+.tracking-count {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 0 6px;
+  background: var(--warn);
+  color: var(--bg);
+  font-variant-numeric: tabular-nums;
+}
+.tracking-count.review { background: var(--ok); }
+.tracking-count.working { background: var(--accent); }
+.tracking-count.plain { background: var(--surface-2); color: var(--muted); font-weight: 400; }
+
+/* Every lane and dock pane body: a focusable region with its own scroll. */
+.tracking-scroll {
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted) var(--bg);
+}
+.tracking-lane-body { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 0; }
+.tracking-lane-body > * { flex: none; }
+.tracking-lane-body > p { margin: 0; }
+/* A fade pinned to the bottom while more content is below. */
+.tracking-scroll::after {
+  content: "";
+  position: sticky;
+  bottom: 0;
+  display: block;
+  flex: none;
+  height: 24px;
+  margin-top: auto;
+  background: linear-gradient(to bottom, transparent, var(--surface));
+  pointer-events: none;
+}
+.tracking-sub { margin: 6px 0 0; font-size: var(--fs-sm); font-weight: 400; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.tracking-sub:first-child { margin-top: 0; }
+
+.tracking-cards,
+.tracking-projects,
+.tracking-titles { list-style: none; margin: 0; padding: 0; }
+.tracking-cards { display: grid; gap: 6px; }
+
+/* A card: workspace › folder chip and time, title, then what it needs. */
+.tracking-card {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  display: grid;
+  gap: 2px;
+  padding: 6px 8px;
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+button.tracking-card { cursor: pointer; }
+button.tracking-card:hover { border-color: var(--accent); }
+.tracking-card.dashed { border-style: dashed; }
+.tracking-card.elsewhere { border-style: dashed; }
+.tracking-card-head { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.tracking-chip {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  background: var(--surface-2);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+.tracking-since { margin-left: auto; flex: none; font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
+.tracking-since.warn { color: var(--warn); }
+.tracking-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tracking-reason { color: var(--warn); }
+.tracking-detail,
+.tracking-activity { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tracking-detail { font-family: var(--font-mono); font-size: var(--fs-sm); }
+.tracking-activity { font-style: italic; }
+.tracking-note { font-size: var(--fs-sm); color: var(--muted); }
+.tracking-wrap { min-width: 0; overflow-wrap: anywhere; color: var(--text); }
+.tracking-wrap code { margin-left: 6px; }
+.tracking-card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.tracking-card-actions .btn { min-height: 32px; padding: 4px 12px; }
+/* "Traer a Mirador": recent activity warns; a disabled button is not busy, just unavailable. */
+.tracking-note.adopt-recent { color: var(--warn); }
+.tracking-card-actions .btn:disabled:not([aria-busy]) { cursor: not-allowed; }
+/* A pending item's night line (styles/inbox.css) wraps instead of cutting its reason. */
+.tracking-card .inbox-night.wrap { height: auto; align-items: baseline; }
+
+/* Dock: today's history and metrics, side by side, collapsible (charts, projects, closed
+   and outside Mirador, usage from styles/resources.css, memory health). */
+.tracking-dock {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sheet);
+  box-shadow: var(--shadow-sheet);
+}
+.tracking-dock-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 6px 12px;
+}
+.tracking-dock-head .btn { margin-left: auto; }
+.tracking-dock-panes {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  min-height: 0;
+  border-top: 1px solid var(--border);
+}
+.tracking-dock-panes[hidden] { display: none; }
+/* Plain mode has no memory panes: three columns in a wide window. */
+@media (min-width: 901px) {
+  .tracking-dock-panes.plain { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.tracking-pane { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; min-width: 0; }
+.tracking-pane + .tracking-pane { border-left: 1px solid var(--border); }
+.tracking-pane h3 { margin: 0; padding: 8px 12px 4px; font-size: var(--fs-ui); display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.tracking-pane h3 .muted { font-weight: 400; margin-left: auto; }
+/* Group sub-headings inside a pane read like the lanes' ones, not like the pane title. */
+.tracking-pane .tracking-sub { display: block; padding: 0; font-size: var(--fs-sm); }
+.tracking-pane .tracking-scroll { display: flex; flex-direction: column; gap: 12px; padding: 4px 12px 0; }
+.tracking-pane .tracking-scroll > * { flex: none; }
+.tracking-pane .tracking-scroll > p { margin: 0; }
+
+.tracking-projects { display: grid; gap: 6px; }
+.tracking-projects > li { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 10px; }
+.tracking-project-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.tracking-project-head strong { overflow-wrap: anywhere; }
+.tracking-badge { flex: none; font-size: var(--fs-sm); color: var(--ok); border: 1px solid var(--border); border-radius: 8px; padding: 0 6px; }
+.tracking-when { margin-left: auto; color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tracking-titles { margin-top: 2px; display: grid; gap: 1px; font-size: var(--fs-sm); }
+.tracking-titles li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.tracking-titles li::before { content: "· "; color: var(--muted); }
+
+/* Development-only top-bar controls hide while Tracking shows (.segmented sets display: flex). */
+.topbar-actions [hidden] { display: none; }
+
+/* Charts (public/charts.js): inline SVG colored with the theme variables. */
+.tracking-chart h4 { margin: 0 0 4px; font-size: var(--fs-sm); font-weight: 400; color: var(--muted); }
+.chart { display: grid; gap: 8px; }
+.chart svg { display: block; overflow: visible; }
+.chart-track { fill: var(--bg); stroke: var(--border); }
+.chart-fill[data-key="working"],
+.chart-swatch[data-key="working"] { fill: var(--accent); background: var(--accent); }
+.chart-fill[data-key="waiting"],
+.chart-swatch[data-key="waiting"] { fill: var(--warn); background: var(--warn); }
+.chart-fill[data-key="finished"],
+.chart-swatch[data-key="finished"] { fill: var(--ok); background: var(--ok); }
+.chart-fill[data-key="exited"],
+.chart-swatch[data-key="exited"] { fill: var(--muted); background: var(--muted); }
+.chart-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.chart-legend li { display: flex; align-items: center; gap: 6px; }
+.chart-swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.chart-bar { fill: var(--accent); }
+.chart-bar.muted { fill: var(--muted); }
+.chart-label { fill: var(--text); font-size: var(--fs-sm); }
+.chart-value { fill: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+
+/* Memories per hour: 24 columns, the busiest hours in the warm color. */
+.chart-axis { stroke: var(--border); }
+.chart-hit { fill: transparent; }
+.chart-column { fill: var(--accent); }
+.chart-column.peak { fill: var(--warn); }
+.tracking-chart .chart + .tracking-small { margin: 6px 0 0; }
+
+/* Memory health pane: read when asked ("Check now" / "Check again"), never polled. */
+.tracking-health-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.tracking-stat {
+  display: grid;
+  padding: 4px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.tracking-stat strong { font-size: var(--fs-title); font-variant-numeric: tabular-nums; }
+.tracking-stat span { font-size: var(--fs-sm); color: var(--muted); }
+.tracking-stat.warn { border-color: var(--warn); }
+.tracking-stat.warn strong { color: var(--warn); }
+.tracking-health-finding { border-top: 1px solid var(--border); padding-top: 8px; display: grid; gap: 4px; }
+.tracking-health-finding h3 { margin: 0; padding: 0; font-size: var(--fs-ui); }
+.tracking-health-finding.has-findings h3 { color: var(--warn); }
+.tracking-health-finding p { margin: 0; font-size: var(--fs-sm); }
+.tracking-health-ok { color: var(--ok); }
+.tracking-health-list > li { display: grid; gap: 2px; }
+.tracking-health-title { overflow-wrap: anywhere; }
+.tracking-health-dirs { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--muted); overflow-wrap: anywhere; }
+.tracking-health-projects > summary { cursor: pointer; min-height: 32px; display: flex; align-items: center; }
+.tracking-health-table { overflow-x: auto; margin-top: 6px; }
+.tracking-health-table table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); }
+.tracking-health-table th,
+.tracking-health-table td { padding: 4px 8px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+.tracking-health-table thead th { color: var(--muted); font-weight: 400; }
+.tracking-health-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.tracking-health-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tracking-health-foot .btn { min-height: 32px; }
+
+/* Narrow windows: lanes and panes stack, the view scrolls and each module keeps a bounded height. */
+@media (max-width: 900px) {
+  .app-view { overflow: auto; }
+  .tracking { height: auto; grid-template-rows: none; }
+  .tracking.dock-closed { grid-template-rows: none; }
+  .tracking-lanes,
+  .tracking-dock-panes { grid-template-columns: minmax(0, 1fr); }
+  .tracking-lane { max-height: 60vh; }
+  .tracking-pane { max-height: 50vh; }
+  .tracking-pane + .tracking-pane { border-left: 0; border-top: 1px solid var(--border); }
+}

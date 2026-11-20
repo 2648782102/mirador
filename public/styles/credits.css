@@ -1,0 +1,144 @@
+/* The credits (public/features/credits.js; the
+   .credits-dialog and its "Cinematic crawl").
+   The shared .dialog (styles/dialog.css) holds the title, the body and the × that closes it; here a
+   fixed box whose body scrolls, and the intro's stage over all of it. */
+
+/* The topbar brand is the button that opens them. */
+button.brand { border: 0; background: none; padding: 4px 8px; margin-left: -8px; border-radius: var(--radius-sm); color: inherit; cursor: pointer; }
+button.brand:hover { background: var(--hover); }
+button.brand:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.dialog.credits-dialog {
+  width: min(560px, calc(100vw - 32px));
+  height: min(660px, 88vh);
+  padding: 0;
+  overflow: hidden;
+  background: var(--paper);
+  border-color: var(--rule);
+}
+.credits-dialog[open] { display: flex; flex-direction: column; }
+.credits-dialog > h2 { display: grid; justify-items: center; gap: 6px; margin: 0; padding: 24px 28px 6px; font-size: 24px; font-weight: 600; text-align: center; }
+svg.icon.credits-mark { --icon: 36px; color: var(--rose); }
+.credits-dialog .dialog-body { flex: 1; min-height: 0; display: block; overflow: auto; padding: 0 28px 20px; }
+.credits-skip { position: absolute; right: 20px; bottom: 16px; z-index: 3; }
+
+/* The still credits. */
+.credits-static { display: grid; gap: 18px; }
+.credits-tagline { padding-bottom: 14px; border-bottom: 1px solid var(--rule); text-align: center; text-wrap: balance; font-family: var(--font-read); font-size: var(--fs-read); color: var(--ink-2); }
+.credits-sec h3 { margin: 0 0 8px; font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.06em; }
+/* Who made it, two groups: the authorship on top,
+   "Creado por" the author, prominent, and the agents under it; the ZURAI block below, past a rule:
+   ZURAI's logo small on its own line, the founder line under it, its pitch and mail. */
+.credits-who { display: grid; gap: 14px; }
+.credits-authorship { display: grid; gap: 4px; }
+.credits-by { font-family: var(--font-read); font-size: 20px; line-height: 1.35; }
+.credits-founder { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; font-family: var(--font-read); font-size: var(--fs-read); color: var(--ink-2); }
+.credits-founder a, .maker-links a { color: var(--accent); font-weight: 600; text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 3px; }
+.credits-founder a:hover, .credits-founder a:focus-visible, .maker-links a:hover, .maker-links a:focus-visible { text-decoration-color: currentColor; }
+.credits-agents { font-family: var(--font-read); font-size: var(--fs-read); line-height: 1.5; color: var(--ink-2); }
+.credits-tools, .credits-thanks { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.credits-tools li { display: grid; grid-template-columns: minmax(150px, 190px) minmax(0, 1fr); gap: 12px; font-size: var(--fs-ui); line-height: 1.45; }
+.credits-tools span { color: var(--ink-2); }
+.credits-thanks { gap: 10px; }
+.credits-thanks li { padding: 10px 12px; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--sheet); }
+/* Alan Buscaglia first, on gentle-shell's rose rail. */
+.credits-thanks li.featured { border-color: var(--rose); box-shadow: inset 3px 0 0 var(--rose); }
+.credits-thanks p { font-size: var(--fs-ui); line-height: 1.5; }
+.credits-thanks .who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; margin-bottom: 2px; }
+.credits-thanks .org { font-size: var(--fs-sm); color: var(--ink-2); }
+.credits-foot { text-align: center; font-family: var(--font-read); font-size: var(--fs-read); color: var(--ink-2); }
+/* The agent logos: one line each, the logo in the text's ink, then
+   the trademarks note in small print. Only the still credits have them. */
+.credits-logos { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.credits-logos li { display: flex; align-items: center; gap: 8px; font-size: var(--fs-ui); line-height: 1.45; }
+.credits-logos-note { margin-top: 6px; font-size: var(--fs-sm); color: var(--ink-2); }
+@media (max-width: 560px) { .credits-tools li { grid-template-columns: minmax(0, 1fr); gap: 0; } }
+
+/* ZURAI under the authorship: its official core logo from file, principal on light and negativo
+   on dark, small at the manual's 100px minimum and with no effects. */
+.credits-zurai { display: grid; gap: 4px; padding-top: 14px; border-top: 1px solid var(--rule); }
+.zurai-logo { width: 100px; height: auto; display: block; }
+.zurai-logo.on-dark { display: none; }
+:root:is([data-theme="dark"], [data-theme="gentleman"]) .zurai-logo.on-light { display: none; }
+:root:is([data-theme="dark"], [data-theme="gentleman"]) .zurai-logo.on-dark { display: block; }
+.credits-zurai .maker-pitch { margin-top: 4px; font-family: var(--font-read); font-size: var(--fs-read); color: var(--ink); }
+.maker-links { display: flex; flex-wrap: wrap; gap: 8px; font-size: var(--fs-ui); color: var(--ink-2); }
+.credits-replay { text-align: center; }
+.credits-replay .btn { display: inline-flex; align-items: center; gap: 6px; }
+
+/* The intro: while the phase is not "done", a night stage covers the dialog; only the
+   × and "Saltar" stay over it, and the still credits wait hidden underneath. */
+.credits-stage {
+  --rose: #ff76c3;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: none;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 50% 115%, #3a1638 0%, #160b1a 42%, #07050a 100%);
+}
+.credits-dialog:not([data-phase="done"]) .credits-stage { display: block; }
+.credits-dialog:not([data-phase="done"]) .dialog-body { overflow: hidden; }
+.credits-dialog:not([data-phase="done"]) > h2, .credits-dialog:not([data-phase="done"]) .credits-static { visibility: hidden; }
+.credits-dialog:not([data-phase="done"]) .dialog-close { z-index: 3; color: #f3e9f1; }
+.credits-dialog:not([data-phase="done"]) .dialog-close:hover { background: rgb(255 255 255 / 0.12); border-color: transparent; }
+
+/* A starry night: still stars, and pink ones that twinkle. */
+.credits-stage::before, .credits-stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; }
+.credits-stage::before { background-image: radial-gradient(1px 1px at 21% 52%, #fff 50%, transparent 51%), radial-gradient(1px 1px at 11% 70%, #fff 50%, transparent 51%), radial-gradient(1px 1px at 48% 76%, #fff 50%, transparent 51%), radial-gradient(1px 1px at 66% 29%, #fff 50%, transparent 51%), radial-gradient(1px 1px at 13% 57%, #fff 50%, transparent 51%), radial-gradient(2px 2px at 10% 32%, #fff 50%, transparent 51%), radial-gradient(1px 1px at 72% 56%, #fff 50%, transparent 51%), radial-gradient(1px 1px at 74% 17%, #fff 50%, transparent 51%), radial-gradient(1.5px 1.5px at 82% 82%, #fff 50%, transparent 51%), radial-gradient(1px 1px at 75% 76%, #fff 50%, transparent 51%), radial-gradient(2px 2px at 8% 30%, #fff 50%, transparent 51%), radial-gradient(1px 1px at 73% 19%, #fff 50%, transparent 51%), radial-gradient(1px 1px at 55% 20%, #fff 50%, transparent 51%), radial-gradient(1px 1px at 75% 41%, #fff 50%, transparent 51%), radial-gradient(1.5px 1.5px at 15% 76%, #fff 50%, transparent 51%), radial-gradient(1.5px 1.5px at 49% 14%, #fff 50%, transparent 51%), radial-gradient(1px 1px at 74% 9%, #fff 50%, transparent 51%), radial-gradient(1.5px 1.5px at 65% 89%, #fff 50%, transparent 51%), radial-gradient(2px 2px at 42% 61%, #fff 50%, transparent 51%), radial-gradient(2px 2px at 48% 40%, #fff 50%, transparent 51%), radial-gradient(1.5px 1.5px at 25% 91%, #fff 50%, transparent 51%), radial-gradient(1.5px 1.5px at 12% 75%, #fff 50%, transparent 51%); opacity: 0.85; }
+.credits-stage::after { background-image: radial-gradient(1px 1px at 40% 69%, #ffd1e8 50%, transparent 51%), radial-gradient(1px 1px at 65% 45%, #ffd1e8 50%, transparent 51%), radial-gradient(1px 1px at 95% 59%, #ffd1e8 50%, transparent 51%), radial-gradient(1px 1px at 38% 79%, #ffd1e8 50%, transparent 51%), radial-gradient(1px 1px at 11% 17%, #ffd1e8 50%, transparent 51%), radial-gradient(1px 1px at 67% 55%, #ffd1e8 50%, transparent 51%), radial-gradient(1px 1px at 23% 98%, #ffd1e8 50%, transparent 51%), radial-gradient(1px 1px at 45% 21%, #ffd1e8 50%, transparent 51%), radial-gradient(1px 1px at 64% 55%, #ffd1e8 50%, transparent 51%), radial-gradient(1px 1px at 7% 87%, #ffd1e8 50%, transparent 51%), radial-gradient(1px 1px at 11% 73%, #ffd1e8 50%, transparent 51%), radial-gradient(1px 1px at 75% 42%, #ffd1e8 50%, transparent 51%), radial-gradient(1px 1px at 45% 90%, #ffd1e8 50%, transparent 51%), radial-gradient(1px 1px at 46% 78%, #ffd1e8 50%, transparent 51%), radial-gradient(1px 1px at 65% 76%, #ffd1e8 50%, transparent 51%), radial-gradient(1px 1px at 60% 10%, #ffd1e8 50%, transparent 51%); opacity: 0.4; animation: twinkle 2.6s ease-in-out infinite alternate; }
+@keyframes twinkle { to { opacity: 0.95; } }
+/* The text and the rose draw over the stars. */
+.credits-stage > :is(.crawl, .rose-intro) { z-index: 1; }
+
+/* The crawl: the credits rise and fade into the distance, in neon rose letters. */
+.crawl { position: absolute; inset: 0; perspective: 560px; perspective-origin: 50% 20%; }
+.crawl::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(to bottom, #09060c 6%, rgba(9, 6, 12, 0.85) 22%, rgba(9, 6, 12, 0) 55%); }
+.crawl-text { position: absolute; left: 20%; right: 20%; top: 0; transform-origin: 50% 0; text-align: center; font-size: 17px; line-height: 1.6; will-change: transform; backface-visibility: hidden; color: #ffe4f1; font-family: var(--font-ui); font-weight: 600; letter-spacing: 0.01em; text-shadow: 0 0 1px rgba(255, 255, 255, 0.7), 0 0 14px rgba(255, 118, 195, 0.5); }
+.credits-dialog[data-phase="crawl"] .crawl-text { animation: crawl var(--crawl-ms, 20s) linear forwards; }
+@keyframes crawl { from { transform: rotateX(22deg) translateY(var(--crawl-from, 600px)); } to { transform: rotateX(22deg) translateY(calc(-100% - 60px)); } }
+.credits-dialog:is([data-phase="rose"], [data-phase="flash"]) .crawl { display: none; }
+.crawl-text :is(p, span, li, b, h3) { color: inherit; }
+.crawl-text .credits-hero { display: grid; justify-items: center; gap: 6px; padding-bottom: 14px; }
+.crawl-text .crawl-title { margin: 0; font-size: 34px; white-space: nowrap; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; background: linear-gradient(180deg, #ffffff 0%, #ffc2e2 55%, #ff76c3 100%); -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: none; filter: drop-shadow(0 0 14px rgba(255, 118, 195, 0.65)); }
+.crawl-text .crawl-tagline { margin: 0; font-size: 18px; color: #ffd1e8; }
+.crawl-text .credits-sec h3 { margin: 26px 0 8px; font-size: 15px; letter-spacing: 0.24em; color: #ff76c3; text-shadow: 0 0 10px rgba(255, 118, 195, 0.9); }
+.crawl-text b { color: #ffffff; font-weight: 800; }
+/* color: the crawl's neon, over .credits-zurai .maker-pitch's ink (dark in the light theme). */
+.crawl-text :is(.credits-by, .credits-thanks p, .credits-foot, .maker-pitch) { font-family: inherit; font-size: 17px; text-align: justify; text-align-last: center; color: inherit; }
+/* The pitch is one short line: centered, since justifying it spreads its words. */
+.crawl-text .credits-zurai .maker-pitch { text-align: center; }
+.crawl-text .credits-tools li { display: block; font-size: 17px; }
+.crawl-text .credits-tools span { display: block; }
+.crawl-text :is(.credits-tools span, .org) { color: #f6b8d9; font-weight: 500; }
+.crawl-text .credits-thanks li, .crawl-text .credits-thanks li.featured { padding: 4px 0; border: 0; background: none; box-shadow: none; }
+.crawl-text .credits-thanks .who { justify-content: center; }
+/* In the crawl, who made it is centered: the founder line and the links like the text around them. */
+.crawl-text :is(.credits-founder, .credits-agents) { font-family: inherit; font-size: 17px; color: inherit; }
+.crawl-text :is(.credits-founder, .maker-links) { justify-content: center; }
+.crawl-text :is(.credits-founder a, .maker-links a) { color: #ffc2e2; }
+/* The rule between the authorship and ZURAI, in the crawl's rose instead of the theme's. */
+.crawl-text .credits-zurai { margin-top: 10px; border-top-color: rgba(255, 118, 195, 0.35); }
+/* The logo and the founder line stack, centered like the rest of the crawl. */
+.crawl-text .credits-founder { align-items: center; }
+.crawl-text .zurai-logo.on-light { display: none; }
+.crawl-text .zurai-logo.on-dark { display: block; }
+
+/* Then the rose, whose sparkle flashes open and leaves the still credits. */
+.rose-intro { position: absolute; inset: 0; display: none; place-items: center; }
+.credits-dialog:is([data-phase="rose"], [data-phase="flash"]) .rose-intro { display: grid; }
+.rose-big { --icon: 120px; color: var(--rose); animation: rose-in 900ms cubic-bezier(0.2, 0.8, 0.2, 1) both; filter: drop-shadow(0 0 14px rgba(255, 118, 195, 0.8)) drop-shadow(0 0 40px rgba(255, 118, 195, 0.45)); }
+svg.icon.rose-big { stroke-width: 1.4; }
+@keyframes rose-in { from { opacity: 0; transform: scale(0.6) rotate(-10deg); } to { opacity: 1; transform: none; } }
+/* Centered on the sparkle of the rose (its 20.4, 11.4 in the 24px symbol, drawn at 120px). */
+.flash { position: absolute; left: calc(50% + 42px - 12px); top: calc(50% - 3px - 12px); width: 24px; height: 24px; border-radius: 50%; background: radial-gradient(circle, #fff 0, color-mix(in srgb, var(--rose) 70%, #fff) 35%, transparent 70%); opacity: 0; }
+.credits-dialog[data-phase="flash"] .flash { animation: flash 1100ms ease-out forwards; }
+@keyframes flash { 0% { opacity: 0; transform: scale(0); } 25% { opacity: 1; transform: scale(1.6); } 100% { opacity: 0.9; transform: scale(60); } }
+.credits-dialog.revealed > h2, .credits-dialog.revealed .credits-static { animation: reveal 800ms ease-out both; }
+@keyframes reveal { from { opacity: 0; filter: blur(6px); transform: scale(0.98); } to { opacity: 1; filter: none; transform: none; } }
+
+/* Reduced motion opens the credits still (credits-model.js); nothing replays or twinkles. */
+@media (prefers-reduced-motion: reduce) {
+  .credits-replay { display: none; }
+  .credits-stage::after { animation: none; }
+}

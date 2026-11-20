@@ -1,0 +1,5 @@
+allowBuilds:
+  node-pty: true
+  # esbuild's postinstall only swaps its CLI shim for the binary; the JS API the server uses finds
+  # the platform binary (@esbuild/<os>-<arch>) on its own, so the script stays off.
+  esbuild: false

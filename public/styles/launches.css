@@ -1,0 +1,38 @@
+/* Launch notice while gentle-deck opens agents and after (public/features/launch-progress.js): the
+   design's paper pill ("Listo: 4 abiertos · …"), at the top of the terminals sheet in Desarrollo
+   and under the top bar in Seguimiento. */
+.launch-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  margin: 10px 10px 2px;
+  padding: 0 6px 0 12px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+/* Seguimiento: on the canvas, in line with the view's 16px sides; the view's own top padding follows. */
+.launch-slot { flex: none; }
+.launch-slot > .launch-bar { margin: 0 16px; }
+.launch-bar[hidden] { display: none; }
+.launch-icon { color: var(--work); }
+.launch-bar:not([data-phase="running"]) > .launch-icon { display: none; }
+
+/* One line; the whole text (every folder not opened) is its tooltip and is read by screen readers. */
+.launch-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Announces the phase and the result only (role="status"), out of sight. */
+.launch-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* Short windows: a slimmer pill. */
+@media (max-height: 760px) {
+  .launch-bar { min-height: 30px; }
+}
+
+/* What waits while agents open: dimmed, still focusable so its tooltip says why. */
+body.launching [data-launch-block][aria-disabled="true"],
+.launch-pause[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }

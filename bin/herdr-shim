@@ -1,0 +1,51 @@
+#!/usr/bin/env node
+// Mirador's stand-in for the herdr CLI, reached as $HERDR_BIN_PATH from agent terminals
+// (through the generated <runtime>/mirador/herdr/herdr launcher). It understands one call,
+//   herdr pane report-metadata <pane> [--source S] [--agent A] [--seq N] [--ttl-ms T]
+//                                      [--token key=value]... [--clear-token key]...
+// and forwards it as one JSON line to $HERDR_SOCKET_PATH, where Mirador validates it.
+// It must never get in the agent's way: it prints nothing, always exits 0 and gives up
+// after one second. Anything else (other commands, no Mirador listening) is ignored.
+import { createConnection } from 'node:net';
+
+const MAX_LINE_BYTES = 4096;
+const TIMEOUT_MS = 1000;
+
+/** The report in argv, or null when this is not a report-metadata call. */
+function parse(argv) {
+  if (argv[0] !== 'pane' || argv[1] !== 'report-metadata' || !argv[2]) return null;
+  const report = { v: 1, cmd: 'report-metadata', pane: argv[2], source: null, seq: null, ttlMs: null, tokens: {}, clear: [] };
+  for (let i = 3; i + 1 < argv.length; i += 2) {
+    const [flag, value] = [argv[i], argv[i + 1]];
+    if (flag === '--source') report.source = value;
+    else if (flag === '--seq') report.seq = Number(value);
+    else if (flag === '--ttl-ms') report.ttlMs = Number(value);
+    else if (flag === '--clear-token') report.clear.push(value);
+    else if (flag === '--token') {
+      const at = value.indexOf('=');
+      if (at > 0) report.tokens[value.slice(0, at)] = value.slice(at + 1);
+    }
+    // --agent and unknown flags: their value is skipped.
+  }
+  return report;
+}
+
+function main() {
+  const report = parse(process.argv.slice(2));
+  const socket = process.env.HERDR_SOCKET_PATH;
+  if (!report || !socket) return;
+  const line = JSON.stringify(report) + '\n';
+  if (Buffer.byteLength(line) > MAX_LINE_BYTES) return;
+  const conn = createConnection(socket);
+  const timer = setTimeout(() => conn.destroy(), TIMEOUT_MS);
+  conn.on('error', () => {});
+  conn.on('close', () => clearTimeout(timer));
+  conn.on('connect', () => conn.end(line));
+}
+
+try {
+  main();
+} catch {
+  // Best effort only: a report that cannot be sent is dropped.
+}
+process.exitCode = 0;

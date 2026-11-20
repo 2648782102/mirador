@@ -1,0 +1,10 @@
+# Keeps the GitHub Actions in .github/workflows up to date. The workflows pin each action to a commit
+# SHA with its release tag in a trailing comment; dependabot updates both in one pull request.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"

@@ -1,0 +1,272 @@
+#!/usr/bin/env bash
+# Mirador launcher: starts the local server when it is not running and opens
+# it in a Chromium app window (Linux, macOS, WSL2), else in a tab of the default browser; on Linux without
+# a display it prints the link to open by hand. Subcommands: (none) open, stop, status, logs,
+# install (adds ~/.local/bin/mirador and, on Linux, an app menu entry), uninstall.
+set -euo pipefail
+
+app_dir="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+run_dir="${XDG_RUNTIME_DIR:-$HOME/.cache}/mirador"
+state="$run_dir/state.json"
+log_dir="${XDG_STATE_HOME:-$HOME/.local/state}/mirador"
+log="$log_dir/server.log"
+
+# Darwin (macOS) or Linux; WSL2 is Linux on a Microsoft kernel.
+os="$(uname -s)"
+wsl=0
+[ "$os" = Linux ] && uname -r | grep -qi microsoft && wsl=1
+
+# Node on PATH, else the one mise manages (a launch from the app menu may not have mise's PATH).
+find_node() {
+  local found shim="$HOME/.local/share/mise/shims/node"
+  command -v node && return
+  found="$(mise which node 2>/dev/null)" && [ -n "$found" ] && echo "$found" && return
+  [ -x "$shim" ] && echo "$shim"
+}
+
+node_bin="$(find_node || true)"
+if [ -z "$node_bin" ]; then
+  echo "mirador: Node 24 or newer not found; install it (https://nodejs.org) and run ./install.sh" >&2
+  exit 1
+fi
+
+field() { "$node_bin" -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(String(s[process.argv[2]]))' "$state" "$1"; }
+
+# A stale state file can point at a recycled pid: also check that it is our server.
+# macOS has no /proc: there ps tells the command line.
+is_server() {
+  kill -0 "$1" 2>/dev/null || return 1
+  if [ "$os" = Darwin ]; then
+    ps -p "$1" -o command= 2>/dev/null | grep -q 'src/server.ts'
+  else
+    tr '\0' ' ' <"/proc/$1/cmdline" 2>/dev/null | grep -q 'src/server.ts'
+  fi
+}
+
+running() {
+  [ -f "$state" ] && is_server "$(field pid)"
+}
+
+# A process that has exited and waits for its parent to reap it (ps shows Z), on Linux and macOS alike.
+# Without ps it reads as not a zombie.
+is_zombie() {
+  case "$(ps -o stat= -p "$1" 2>/dev/null)" in *Z*) return 0 ;; esac
+  return 1
+}
+
+# Trades the launch secret (read inside node, never in argv) for a one-time window URL.
+launch_url() {
+  "$node_bin" -e '
+    const s = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+    fetch(`http://127.0.0.1:${s.port}/bootstrap`, { method: "POST", headers: { authorization: `Bearer ${s.launchSecret}` } })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`bootstrap answered ${r.status}`))))
+      .then((b) => process.stdout.write(b.url))
+      .catch((e) => { console.error(`mirador: ${e.message}`); process.exit(1); });
+  ' "$state"
+}
+
+scope_flags=(--user --scope --collect --quiet --expand-environment=no)
+
+# Whether the server can run in its own systemd user scope (MIRADOR_SCOPES=0 opts out).
+scopes_work() {
+  [ "${MIRADOR_SCOPES:-}" != 0 ] && timeout 2 systemd-run "${scope_flags[@]}" -- true >/dev/null 2>&1
+}
+
+start_server() {
+  local pid scoped=0
+  mkdir -p "$log_dir"
+  rm -f "$state"
+  scopes_work && scoped=1
+  # setsid -w keeps $! alive exactly as long as the server, even if setsid has to fork.
+  # In its own scope (systemd-run execs it in place, named after its pid) an OOM kill of the
+  # terminal that ran this launcher does not take the server down with it.
+  # Without setsid (macOS) the server runs in place of the subshell, so $! is the server.
+  (
+    cd "$app_dir"
+    if [ "$scoped" = 1 ]; then
+      set -- systemd-run "${scope_flags[@]}" --unit="mirador-server-$BASHPID" -- "$node_bin" src/server.ts
+    else
+      set -- "$node_bin" src/server.ts
+    fi
+    command -v setsid >/dev/null && exec setsid -w "$@"
+    exec "$@"
+  ) >>"$log" 2>&1 </dev/null &
+  pid=$!
+  for _ in $(seq 1 50); do
+    [ -f "$state" ] && return 0
+    if ! kill -0 "$pid" 2>/dev/null; then
+      echo "mirador: the server exited during startup; see $log" >&2
+      tail -n 20 "$log" >&2 || true
+      exit 1
+    fi
+    sleep 0.1
+  done
+  echo "mirador: the server did not start within 5 s; see $log" >&2
+  tail -n 20 "$log" >&2 || true
+  exit 1
+}
+
+# The Chromium-family browsers, in doctor's order (src/doctor.ts BROWSERS and MAC_APPS; keep them in
+# step): only this family opens `--app=URL` as a window without browser UI.
+linux_browsers=(chromium chromium-browser brave brave-browser google-chrome-stable google-chrome microsoft-edge-stable microsoft-edge vivaldi-stable vivaldi)
+mac_apps=("Google Chrome" "Brave Browser" "Microsoft Edge" Vivaldi Chromium)
+
+# The config's `browser` (a command on PATH or a macOS app name) when it is a non-empty string, as src/config.ts reads it.
+config_browser() {
+  "$node_bin" -e '
+    try {
+      const b = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).browser;
+      if (typeof b === "string" && b.trim()) process.stdout.write(b.trim());
+    } catch {}
+  ' "${XDG_CONFIG_HOME:-$HOME/.config}/mirador/config.json"
+}
+
+# Starts <browser> with an app window on <url>, detached from this launcher.
+app_window() {
+  if command -v setsid >/dev/null; then
+    setsid "$1" --app="$2" --class=mirador >/dev/null 2>&1 </dev/null &
+  else
+    "$1" --app="$2" --class=mirador >/dev/null 2>&1 </dev/null &
+  fi
+}
+
+tab_notice() {
+  local IFS=,
+  local list="$*"
+  echo "mirador: opened as a tab in the default browser ($opener); the app window (no browser UI) needs a Chromium-family browser: ${list//,/, }" >&2
+}
+
+# On macOS `open -a` fails for an app that is not installed, so the first that opens wins.
+open_mac_window() {
+  local app opener=open
+  for app in "${mac_apps[@]}"; do
+    open -na "$app" --args --app="$1" >/dev/null 2>&1 </dev/null && return 0
+  done
+  if open "$1" >/dev/null 2>&1 </dev/null; then
+    tab_notice "${mac_apps[@]}"
+    return 0
+  fi
+  local IFS=,
+  local list="${mac_apps[*]}"
+  echo "mirador: no browser found: the app window needs a Chromium-family app (${list//,/, }), and open could not open a tab" >&2
+  return 1
+}
+
+open_window() {
+  local url browser configured opener=xdg-open
+  url="$(launch_url)"
+  # On Linux without a display (an SSH session, a container) no browser can show a window, and one
+  # started anyway fails silently: print the link instead. WSL2 opens the Windows browser, so it goes on.
+  # The link is the window's one-time link (LAUNCH_NONCE_TTL_MS in src/http/security.ts).
+  if [ "$os" = Linux ] && [ "$wsl" = 0 ] && [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
+    echo "mirador: no display (DISPLAY and WAYLAND_DISPLAY are unset), so no window opens; open this one-time link in a browser within 60 s: $url"
+    return 0
+  fi
+  configured="$(config_browser || true)"
+  if [ -n "$configured" ]; then
+    if command -v "$configured" >/dev/null; then
+      app_window "$configured" "$url"
+      return 0
+    fi
+    if [ "$os" = Darwin ] && open -na "$configured" --args --app="$url" >/dev/null 2>&1 </dev/null; then
+      return 0
+    fi
+    echo "mirador: the config's browser \"$configured\" was not found; trying the Chromium-family browsers" >&2
+  fi
+  [ "$os" = Darwin ] && { open_mac_window "$url"; return; }
+  for browser in "${linux_browsers[@]}"; do
+    if command -v "$browser" >/dev/null; then
+      setsid "$browser" --app="$url" --class=mirador >/dev/null 2>&1 </dev/null &
+      return 0
+    fi
+  done
+  # On WSL2 the Windows browser opens the link: through wslview (wslu), else an Edge app window
+  # through Windows PowerShell (recent Ubuntu releases ship no wslu), else a tab through xdg-open,
+  # else by hand.
+  if [ "$wsl" = 1 ]; then
+    command -v wslview >/dev/null && wslview "$url" >/dev/null 2>&1 </dev/null && return 0
+    command -v powershell.exe >/dev/null &&
+      powershell.exe -NoProfile -NonInteractive -Command "Start-Process msedge -ArgumentList '--app=$url'" >/dev/null 2>&1 </dev/null &&
+      return 0
+  fi
+  # Any browser shows Mirador in a tab; xdg-open may wait for the browser, so it runs detached.
+  if command -v xdg-open >/dev/null; then
+    setsid xdg-open "$url" >/dev/null 2>&1 </dev/null &
+    tab_notice "${linux_browsers[@]}"
+    return 0
+  fi
+  if [ "$wsl" = 1 ]; then
+    echo "mirador: open this link in a browser: $url"
+    return 0
+  fi
+  local IFS=,
+  local list="${linux_browsers[*]}"
+  echo "mirador: no browser found: the app window needs a Chromium-family browser (${list//,/, }), and xdg-open is not on PATH for a tab" >&2
+  return 1
+}
+
+case "${1:-open}" in
+  open)
+    running || start_server
+    open_window
+    ;;
+  stop)
+    if ! running; then echo "mirador: not running"; exit 0; fi
+    pid="$(field pid)"
+    kill "$pid"
+    # The server ends its terminals' scopes before it exits (up to systemd's stop timeout):
+    # return only once the process is gone, so `mirador stop && mirador` never meets the old
+    # server, its port or its agents. kill -0 answers the same on Linux and macOS. The command
+    # line is no test here: it reads empty while the process is still exiting.
+    # Detached, the server is reaped by init (or the user manager) once it exits. A zombie has
+    # closed its files and port already, and one whose parent never reaps it (a container whose
+    # pid 1 is no init) answers kill -0 for good, so a zombie (ps shows Z) counts as stopped at
+    # once: nothing waits for it to be reaped.
+    for _ in $(seq 1 300); do
+      kill -0 "$pid" 2>/dev/null || { echo "mirador: stopped"; exit 0; }
+      is_zombie "$pid" && { echo "mirador: stopped"; exit 0; }
+      sleep 0.1
+    done
+    echo "mirador: the server (pid $pid) is still stopping after 30 s; see $log" >&2
+    exit 1
+    ;;
+  status)
+    if running; then echo "mirador: running (pid $(field pid), port $(field port))"; else echo "mirador: not running"; exit 1; fi
+    ;;
+  logs)
+    exec tail -n 50 -f "$log"
+    ;;
+  install)
+    mkdir -p "$HOME/.local/bin"
+    ln -sfn "$app_dir/bin/mirador" "$HOME/.local/bin/mirador"
+    if [ "$os" = Darwin ]; then
+      echo "mirador: installed ~/.local/bin/mirador (macOS has no app menu entry)"
+      exit 0
+    fi
+    mkdir -p "$HOME/.local/share/applications"
+    cat >"$HOME/.local/share/applications/mirador.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Mirador
+Comment=Folder tree, gentle-shell terminals and daily Engram summaries
+Exec=$HOME/.local/bin/mirador
+Icon=$app_dir/public/icon.svg
+Terminal=false
+Categories=Development;
+StartupWMClass=mirador
+EOF
+    echo "mirador: installed ~/.local/bin/mirador and the Mirador app menu entry"
+    ;;
+  uninstall)
+    rm -f "$HOME/.local/bin/mirador" "$HOME/.local/share/applications/mirador.desktop"
+    if [ "$os" = Darwin ]; then
+      echo "mirador: removed the launcher (the app folder is untouched)"
+      exit 0
+    fi
+    echo "mirador: removed the launcher and the app menu entry (the app folder is untouched)"
+    ;;
+  *)
+    echo "usage: mirador [open|stop|status|logs|install|uninstall]" >&2
+    exit 2
+    ;;
+esac

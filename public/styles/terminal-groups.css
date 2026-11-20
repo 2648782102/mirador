@@ -1,0 +1,90 @@
+/* Terminal groups (public/terminals.js): tabs and grid panes grouped by workspace, each group collapsible. */
+
+/* Tabs bar: one block per workspace, a header chip then its tabs. */
+.tab-group { display: flex; align-items: flex-end; gap: 2px; flex: none; }
+.tab-group + .tab-group { margin-left: 6px; padding-left: 6px; border-left: 1px solid var(--border); }
+.tab-group-tabs { display: flex; gap: 2px; }
+.tab-group-tabs[hidden] { display: none; }
+/* The 28px chip sits centered on the 30px tabs. */
+.tab-group .term-group-head { margin-bottom: 1px; }
+
+/* A tab (terminals.js mountTerminal) is a wrapper holding its role=tab and, beside it, its ×:
+   the role=tab carries the selected state, which the wrapper draws as styles.css .tab[aria-selected]. */
+.tab-item { display: inline-flex; align-items: center; gap: 6px; min-width: 0; min-height: 26px; border-radius: var(--radius-sm); cursor: inherit; }
+.tab:has(> .tab-item[aria-selected="true"]) { background: var(--paper); border-color: var(--rule); }
+.tab-item > .term-mark > svg.icon { --icon: inherit; }
+/* A long title ends in an ellipsis; the tab's title attribute carries it whole. */
+.tab-title { max-width: 24ch; overflow: hidden; text-overflow: ellipsis; }
+
+/* The header chip, the same in the tabs bar and above the grid panes: the design's 28px pill
+   with a caret, the name and "2 terminales" (artboard 03 .group-name). */
+.term-group-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 28px;
+  padding: 0 12px 0 10px;
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.term-group-head:hover { background: var(--hover); }
+.term-group-caret { display: inline-flex; }
+.term-group-mark > svg.icon { --icon: var(--icon-sm); }
+.term-group-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.term-group-count { font-size: var(--fs-sm); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.term-group-count[hidden] { display: none; }
+/* Inbox mark on a collapsed group's header, whose panes are out of sight: an icon as well as a
+   color, never color alone. An expanded group shows the state on each tab and pane instead. */
+.term-group-mark { display: inline-flex; }
+.term-group-mark:empty, .term-group-head[aria-expanded="true"] .term-group-mark { display: none; }
+.term-group-head[aria-expanded="false"][data-mark="waiting"] { border-color: var(--warn); }
+.term-group-head[data-mark="waiting"] .term-group-mark { color: var(--warn); }
+.term-group-head[data-mark="finished"] .term-group-mark { color: var(--ok); }
+
+/* Grid: a header row spanning every column above each workspace's panes; a collapsed workspace hides its panes. */
+.panes[data-layout="grid"] { align-content: start; }
+.pane-group-head { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.panes[data-layout="tabs"] .pane-group-head { display: none; }
+.panes[data-layout="grid"] .pane.group-collapsed { display: none; }
+/* "Arrastra una cabecera para reordenar" at the end of one group's header (terminal-groups.js reorderHintGroup). */
+.term-group-hint { margin-left: auto; font-size: var(--fs-sm); color: var(--ink-2); }
+@media (max-width: 959px) {
+  .term-group-hint { display: none; }
+}
+/* The sleeping agents' "Dormidos (N)" entry (styles/sleeping.css) is the design's dashed pill
+   beside the chip (.sleep-chip); in the tabs bar it keeps the 28px of the chip. */
+.panes .pane-group-head > .sleep-entry { gap: 6px; min-height: 28px; margin: 0; padding: 0 12px; border: 1px dashed var(--rule-strong); border-radius: var(--radius-pill); color: var(--ink-2); font-size: var(--fs-sm); }
+#tabs .tab-group-tabs > .sleep-entry { gap: 6px; min-height: 28px; margin: 0 0 1px 4px; padding: 0 12px; border: 1px dashed var(--rule-strong); border-radius: var(--radius-pill); color: var(--ink-2); }
+
+/* Reordering (terminals.js wireDrag): the dragged tab fades and turns dashed, and a 3px accent bar
+   on the side it would take marks the drop place (the design's .tab.dragging, .tab-drop). */
+.pane-head[draggable="true"] { cursor: grab; }
+.tab.dragging { opacity: 0.4; border: 1px dashed var(--accent); border-bottom: 0; cursor: grabbing; }
+/* The active terminal the state filter shows only because it is active (terminals.js renderGroups). */
+.tab.off-filter { opacity: 0.6; }
+.pane.dragging { opacity: 0.5; }
+/* Centered in the 2px gap between tabs, past the tab's 1px border. */
+.tab[data-drop]::before { content: ""; position: absolute; top: 4px; bottom: 0; width: 3px; border-radius: var(--radius-pill); background: var(--accent); }
+.tab[data-drop="before"]::before { left: -3.5px; }
+.tab[data-drop="after"]::before { right: -3.5px; }
+.panes[data-layout="grid"] .pane[data-drop="before"] { box-shadow: inset 3px 0 0 var(--accent); }
+.panes[data-layout="grid"] .pane[data-drop="after"] { box-shadow: inset -3px 0 0 var(--accent); }
+
+/* The sidebar's state filter hides the tabs and panes it
+   leaves out; when it leaves none, the notice says so and offers "Ver todos". */
+.tabs .tab[hidden] { display: none; }
+.panes .pane[hidden] { display: none; }
+.filter-empty { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px; padding: 24px; text-align: center; color: var(--ink-2); }
+.filter-empty[hidden] { display: none; }
+.filter-empty p { margin: 0; }
+.panes:has(> .filter-empty:not([hidden])) .empty-state { display: none; }
+
+/* The errors that used to be window.alert (dialog.js showAlert), one line under the top bar with its
+   ×; the slot takes no space while empty. */
+.alerts-slot { flex: none; display: flex; align-items: center; gap: 8px; margin: 6px 16px 0; }
+.alerts-slot:empty { display: none; }
+.alerts-slot > .inline-alert { flex: 1; min-width: 0; margin: 0; }

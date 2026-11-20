@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mirador</title>
+  <!-- First on purpose: redeems the one-time launch link before anything else loads (it lives 60 s from the launcher's request). -->
+  <script src="/launch-boot.js"></script>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <!-- Classic and blocking on purpose: sets <html data-theme> from the stored pref before the first paint. -->
+  <script src="/theme-boot.js"></script>
+  <link rel="stylesheet" href="/vendor/xterm.css">
+  <link rel="stylesheet" href="/styles.css">
+  <!-- One stylesheet per feature, in public/styles/. Wave 2 adds its line under its own marker. -->
+  <link rel="stylesheet" href="/styles/dialog.css">
+  <link rel="stylesheet" href="/styles/workspaces.css">
+  <!-- W3 overview -->
+  <link rel="stylesheet" href="/styles/overview.css">
+
+  <!-- W4 inbox -->
+  <link rel="stylesheet" href="/styles/inbox.css">
+
+  <!-- W5 editor -->
+  <link rel="stylesheet" href="/styles/files.css">
+
+  <!-- Tracking -->
+  <link rel="stylesheet" href="/styles/tracking.css">
+
+  <!-- Terminal groups -->
+  <link rel="stylesheet" href="/styles/terminal-groups.css">
+
+  <!-- Night -->
+  <link rel="stylesheet" href="/styles/night.css">
+
+  <!-- Resources -->
+  <link rel="stylesheet" href="/styles/resources.css">
+
+  <!-- Launches -->
+  <link rel="stylesheet" href="/styles/launches.css">
+
+  <!-- Sleeping agents -->
+  <link rel="stylesheet" href="/styles/sleeping.css">
+
+  <!-- MCP per project -->
+  <link rel="stylesheet" href="/styles/mcp.css">
+
+  <!-- Settings sheet -->
+  <link rel="stylesheet" href="/styles/settings.css">
+
+  <!-- Help guide -->
+  <link rel="stylesheet" href="/styles/help.css">
+
+  <!-- Credits -->
+  <link rel="stylesheet" href="/styles/credits.css">
+
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <!-- Text comes from public/i18n.js: data-i18n sets textContent, data-i18n-title and data-i18n-label set title and aria-label. -->
+  <!-- data-slot="…" marks where features mount their UI (see docs/extending.md); slots start empty and take no space. -->
+  <header class="topbar">
+    <!-- The drawer buttons show while their side is hidden or a drawer (styles.css; public/columns.js, public/features/drawers.js). -->
+    <button type="button" class="btn icon icon-btn side-show show-side" data-side="sidebar" aria-controls="sidebar" aria-expanded="false" data-i18n-label="side.show.sidebar" data-i18n-title="side.show.sidebar"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-sidebar"/></svg></button>
+    <!-- Opens the credits (public/features/credits.js). -->
+    <button type="button" class="brand" id="credits-open" translate="no" aria-haspopup="dialog" data-i18n-label="credits.open" data-i18n-title="credits.open"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-mark"/></svg>Mirador</button>
+    <div class="topbar-slot" data-slot="topbar"></div>
+    <div class="topbar-actions">
+      <!-- Shown only while the autopilot is on (public/features/settings.js). -->
+      <span class="night-chip" id="night-chip" data-i18n-title="night.sereno" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-sereno"/></svg><span data-i18n="settings.night">Piloto automático</span></span>
+      <!-- The one figure: free memory (public/features/resources.js); Seguimiento's strip shows it there. -->
+      <span class="topbar-figure" data-development-only><span class="res-memory" id="topbar-memory" hidden></span></span>
+      <button type="button" class="btn icon icon-btn side-show show-panel" data-side="panel" aria-controls="panel" aria-expanded="false" data-i18n-label="side.show.panel" data-i18n-title="side.show.panel"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-panel"/></svg></button>
+      <!-- Autopilot, terminals, theme and language: rows built by public/features/settings.js. -->
+      <div class="settings">
+        <button type="button" class="btn icon icon-btn" id="settings-toggle" aria-expanded="false" aria-controls="settings-sheet" data-i18n-label="settings.label" data-i18n-title="settings.label"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-sliders"/></svg></button>
+        <div class="settings-pop" id="settings-sheet" role="group" data-i18n-label="settings.label" hidden></div>
+      </div>
+    </div>
+  </header>
+  <div class="launch-slot" data-slot="launches"></div>
+  <!-- Errors that used to be window.alert, as an inline role=alert line (public/dialog.js showAlert). -->
+  <div class="alerts-slot" data-slot="alerts"></div>
+
+  <main class="layout" id="layout">
+    <aside class="sidebar" id="sidebar" data-i18n-label="tree.label">
+      <div class="sidebar-head">
+        <h2 data-i18n="ws.heading">Workspaces</h2>
+        <div class="side-head-actions">
+          <!-- The state filter's funnel and menu, built by public/features/workspaces.js. -->
+          <div class="state-filter" data-slot="state-filter"></div>
+          <button type="button" class="btn" id="ws-add" data-i18n-label="ws.add" data-i18n-title="ws.add"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-plus"/></svg><span data-i18n="ws.addShort">Add</span></button>
+          <button type="button" class="btn icon side-hide" data-side="sidebar" data-i18n-label="side.hide.sidebar" data-i18n-title="side.hide.sidebar"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevs-left"/></svg></button>
+        </div>
+      </div>
+      <!-- The picked states of the filter, as removable chips, filled by public/features/workspaces.js. -->
+      <p class="active-filter" data-slot="active-filter" hidden></p>
+      <div class="tree" id="tree" role="tree" data-i18n-label="tree.label" data-slot="workspaces"></div>
+    </aside>
+
+    <section class="workspace" data-i18n-label="term.label">
+      <div class="tabs" id="tabs" role="tablist"></div>
+      <div class="panes" id="panes" data-layout="tabs">
+        <!-- Shown by public/terminals.js while the state filter hides every terminal. -->
+        <div class="filter-empty" id="filter-empty" hidden>
+          <p data-i18n="filter.noTerminals">No terminal in this state.</p>
+          <button type="button" class="btn" id="filter-empty-all" data-i18n="filter.state.all">Show all</button>
+        </div>
+        <div class="empty-state" id="empty-state">
+          <p data-i18n="empty.none">No terminals yet.</p>
+          <p id="empty-hint"></p>
+        </div>
+      </div>
+    </section>
+
+    <aside class="panel" id="panel" data-i18n-label="overview.leftOff">
+      <div class="panel-head">
+        <div class="panel-top">
+          <div class="panel-title">
+            <p class="crumb" id="panel-crumb" translate="no"></p>
+            <h2 id="panel-heading"></h2>
+            <p class="muted" id="panel-subtitle" translate="no"></p>
+          </div>
+          <button type="button" class="btn icon side-hide" data-side="panel" data-i18n-label="side.hide.panel" data-i18n-title="side.hide.panel"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevs-right"/></svg></button>
+        </div>
+        <div class="panel-views segmented" role="group" data-i18n-label="panel.views" data-slot="panel-views" hidden></div>
+      </div>
+      <!-- The segment shows one view (public/features/summary.js): "Te esperan" the inbox cards, "Día" the date nav over the body, the others the body. -->
+      <div class="date-nav" id="date-nav" hidden>
+        <button type="button" class="btn icon" id="day-prev" data-i18n-label="day.prev"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chev-right"/></svg></button>
+        <input type="date" id="day-input" data-i18n-label="day.input">
+        <button type="button" class="btn icon" id="day-next" data-i18n-label="day.next"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chev-right"/></svg></button>
+        <button type="button" class="btn" id="day-today" data-i18n="day.today">Today</button>
+        <button type="button" class="btn" id="show-all" data-i18n="panel.overview" data-i18n-title="panel.overviewTitle" hidden>Overview</button>
+      </div>
+      <section class="inbox-slot" data-slot="inbox" hidden></section>
+      <div class="panel-body" id="panel-body"></div>
+    </aside>
+  </main>
+
+  <!-- Tracking: the global tracking view; it hides main#layout while shown (the terminals keep running). -->
+  <section class="app-view" data-slot="tracking" data-i18n-label="tracking.label" hidden></section>
+
+  <div data-slot="modals"></div>
+
+  <div class="overlay" id="auth-overlay" hidden>
+    <div class="overlay-card">
+      <h2 data-i18n="auth.title">Session expired</h2>
+      <p id="auth-body"></p>
+    </div>
+  </div>
+</body>
+</html>

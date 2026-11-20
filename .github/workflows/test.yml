@@ -1,0 +1,92 @@
+# Runs the test suite and a secret scan of the git history on every push and
+# pull request. The scan's allowlist lives in .gitleaks.toml. The macOS job
+# runs only when started by hand (Actions > test > Run workflow), because
+# macOS minutes cost ten times the Linux ones on a private repository.
+#   gh workflow run test.yml --ref <branch>
+# node-pty compiles native code, so the runner needs python3, make and a C++
+# compiler; both GitHub images ship them.
+# pnpm comes from pnpm/action-setup, pinned to the major used locally, so the
+# lockfile is installed by a compatible pnpm without a packageManager field
+# in package.json (pnpm 12 would otherwise rewrite the lockfile on install).
+# Every job has a timeout-minutes, so a hung test or step stops there instead of
+# running for GitHub's default 6 hours. Each limit is about three times the job's
+# expected run (install with the node-pty compile, then its step).
+# Every action is pinned to a commit SHA, with its release tag in a trailing comment, so a moved
+# tag cannot change what runs; dependabot (.github/dependabot.yml) proposes the updates.
+name: test
+
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          version: 12
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+
+  # Types, split in two. src/ has no errors, so its step blocks: a type error in src/ fails the job.
+  # test/ and scripts/ only report their count against the
+  # baseline (scripts/typecheck-report.ts), never fail.
+  typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          version: 12
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck:src
+      - run: pnpm typecheck:test
+
+  # gitleaks needs the whole history, so this checkout is not shallow. On pull requests the action
+  # lists the PR's commits through the API, which needs pull-requests: read on top of contents: read.
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+          # The action's built-in gitleaks predates the [[allowlists]] syntax in .gitleaks.toml.
+          GITLEAKS_VERSION: 8.30.1
+          # Commenting on the PR would need pull-requests: write; the job summary is enough.
+          GITLEAKS_ENABLE_COMMENTS: false
+
+  # Experimental platform: failures inform, they do not block. Manual runs only.
+  test-macos:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    continue-on-error: true
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          version: 12
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test

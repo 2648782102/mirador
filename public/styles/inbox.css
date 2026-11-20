@@ -1,0 +1,137 @@
+/* Attention inbox (public/features/inbox.js), the panel's "Te esperan" view, and the marks on
+   terminal tabs and panes. The view scrolls as the panel body does. */
+.inbox-slot {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+.inbox-cards > .notice { margin: 0; }
+/* Browser notifications (opt-in, public/features/inbox-notify.js): a secondary control above the cards. */
+.inbox-notify {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0 4px 12px;
+  font-size: var(--fs-sm);
+}
+.inbox-notify-toggle { flex: none; min-height: 32px; font-size: var(--fs-sm); padding: 2px 8px; }
+.inbox-notify-status { min-width: 0; color: var(--muted); }
+.inbox-notify-status:focus { outline: none; }
+.inbox-notify-status:focus-visible { outline: 2px solid var(--warn); outline-offset: 2px; }
+.inbox-notify-status.denied { color: var(--warn); }
+/* The "needs you" list is one list across workspaces (each card names its own), longest wait first. */
+.inbox-group-note { margin: -2px 4px 4px; font-size: var(--fs-sm); color: var(--muted); }
+.inbox-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 4px 4px;
+  font-size: var(--fs-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--warn);
+}
+.inbox-count {
+  background: var(--warn);
+  color: var(--bg);
+  border-radius: 8px;
+  padding: 0 6px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.inbox-group + .inbox-group { margin-top: 10px; }
+.inbox-ws + .inbox-ws { margin-top: 6px; }
+.inbox-ws h3 { margin: 4px 4px 2px; font-size: var(--fs-sm); font-weight: 600; color: var(--muted); }
+.inbox-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.inbox-item { display: flex; align-items: center; gap: 4px; }
+.inbox-jump {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  display: grid;
+  gap: 1px;
+  padding: 4px 8px;
+  text-align: left;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warn);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.inbox-jump:hover { border-color: var(--warn); }
+.inbox-jump.elsewhere { cursor: default; opacity: 0.8; }
+/* Finished turns rank below answers: calmer colour, same shape. */
+.inbox-group.review .inbox-group-head { color: var(--ok); }
+.inbox-group.review .inbox-count { background: var(--ok); }
+.inbox-group.review .inbox-jump { border-left-color: var(--ok); }
+.inbox-group.review .inbox-jump:hover { border-color: var(--ok); }
+.inbox-group.review .inbox-wait { color: var(--muted); }
+.inbox-place,
+.inbox-reason,
+.inbox-detail,
+.inbox-activity { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inbox-place { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--muted); }
+.inbox-reason { font-weight: 600; }
+.inbox-detail { font-size: var(--fs-sm); }
+.inbox-meta { display: flex; gap: 8px; min-width: 0; font-size: var(--fs-sm); color: var(--muted); }
+.inbox-wait { flex: none; color: var(--warn); }
+.inbox-file { flex: none; font-size: var(--fs-sm); padding: 2px 8px; }
+
+/* The same mark on the terminal itself (terminals.js markWaiting): an icon named by the reason
+   as well as a color, never color alone. */
+.term-mark { display: inline-flex; }
+.term-mark:empty { display: none; }
+.term-mark > svg.icon { --icon: var(--icon-sm); }
+.tab[data-waiting] .term-mark, .pane[data-waiting] .term-mark { color: var(--warn); }
+.tab[data-waiting] { color: var(--text); }
+.panes[data-layout="grid"] .pane[data-waiting] { border-color: var(--warn); }
+.tab[data-finished]:not([data-waiting]) .term-mark, .pane[data-finished]:not([data-waiting]) .term-mark { color: var(--ok); }
+
+/* Night shift on a card: one fixed-height line, so changing state never moves the list. */
+.inbox-night {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 18px;
+  font-size: var(--fs-sm);
+}
+.inbox-night-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  line-height: 14px;
+}
+/* An icon as well as a colour, never colour alone (public/i18n/inbox.js nightView). */
+.inbox-night-badge > svg.icon { --icon: var(--icon-sm); }
+.inbox-night.deciding { color: var(--muted); }
+.inbox-night.resolved { color: var(--ok); }
+.inbox-night.deferred { color: var(--warn); }
+.inbox-night-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+/* While Mirador decides, its working icon breathes. */
+@media (prefers-reduced-motion: no-preference) {
+  .inbox-night.deciding .inbox-night-badge > svg.icon { animation: inbox-night-breathe 1.8s ease-in-out infinite; }
+}
+@keyframes inbox-night-breathe { 50% { opacity: 0.45; } }
+/* A card Mirador resolved, kept as a note until seen: calmer, and not counted. */
+.night-note .inbox-jump { border-style: dashed; border-left-style: solid; border-left-color: var(--ok); opacity: 0.9; }
+/* Read by screen readers, never shown. */
+.inbox-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

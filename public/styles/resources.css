@@ -1,0 +1,60 @@
+/* RAM and CPU figures (public/features/resources.js). */
+
+/* Development: the badge before a tab's or a grid pane head's close button. */
+.res-badge {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.pane-head .res-badge { margin-left: auto; }
+.pane-head .res-badge + .close { margin-left: 0; }
+/* A pane under 340px hides the badge (styles.css); the close takes the end again. */
+@container (max-width: 340px) { .pane-head .res-badge + .close { margin-left: auto; } }
+
+/* Seguimiento strip: free memory, in the warm color with a glyph and the words "Low memory" below the threshold. */
+.tracking-counts .res-memory { font-variant-numeric: tabular-nums; }
+.tracking-counts .res-memory.low,
+.tracking-counts .res-memory.low strong { color: var(--warn); }
+.res-memory[hidden] { display: none; }
+.res-memory > svg.icon { margin-right: 4px; }
+
+/* A card's usage line. */
+.res-line { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
+.res-line[hidden] { display: none; }
+
+/* Dock "Usage" pane: the heaviest agents, the server, the gentle-shells outside Mirador. */
+.res-status:empty { display: none; }
+.res-status p { margin: 0; }
+.res-heaviest,
+.res-outside-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.res-heaviest[hidden],
+.res-outside[hidden],
+.tracking-pane .tracking-sub[hidden] { display: none; }
+.res-agent {
+  width: 100%;
+  min-height: 32px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 3.5em;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 8px;
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  cursor: pointer;
+}
+.res-agent:hover:not(:disabled) { border-color: var(--accent); }
+.res-agent:disabled { cursor: default; border-style: dashed; }
+.res-agent-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.res-figure,
+.res-cpu { font-family: var(--font-mono); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.res-cpu { color: var(--muted); }
+.res-outside > summary { cursor: pointer; min-height: 32px; display: flex; align-items: center; }
+.res-outside-body { display: grid; gap: 6px; }
+.res-outside-body p { margin: 0; }
+.res-outside-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; font-size: var(--fs-sm); }
+.res-cwd { font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

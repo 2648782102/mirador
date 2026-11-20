@@ -1,0 +1,579 @@
+/* Theme tokens. Light is the default; dark and
+   gentleman swap the values of the same names under <html data-theme="…"> (public/theme-model.js).
+   Feature CSS keeps the original names (--bg, --surface, --text…), defined once here as aliases
+   of the design roles, so a theme block only sets the roles. */
+:root {
+  /* Surfaces: warm canvas, floating sheets, white paper for cards, buttons and fields. */
+  --canvas: #ebe8e1;
+  --sheet: #faf9f6;
+  --paper: #ffffff;
+  --hover: #f0ede6;
+  --rule: #d8d3c8;
+  --rule-strong: #b5ad9f;
+  --ink: #1f2328;
+  --ink-2: #545b66;
+  --accent: #3b5bdb;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(59, 91, 219, 0.10);
+  --title: var(--ink);
+  /* gentle-shell's rose: darker in claro to contrast. */
+  --rose: #c81e6f;
+  /* States: a glyph and a word as well, never color alone. */
+  --work: #2f5fd0;
+  --wait: #8a5300;
+  --done: #2e7639;
+  --sleep: #5f6672;
+  --err: #b3243b;
+  --work-bg: rgba(47, 95, 208, 0.09);
+  --wait-bg: rgba(186, 120, 10, 0.12);
+  --done-bg: rgba(46, 118, 57, 0.10);
+  --err-bg: rgba(179, 36, 59, 0.09);
+  /* Terminal wells stay dark in every theme (public/terminals.js reads them for xterm). */
+  --well: #1b1d22;
+  --well-head: #24272e;
+  --well-line: #30343c;
+  --well-ink: #e3e5e8;
+  --well-dim: #a0a7b1;
+  --well-work: #8fb1f0;
+  --well-ok: #9fd17f;
+  --well-warn: #f0c06d;
+  --well-err: #f2919f;
+  --overlay: rgba(31, 35, 40, 0.32);
+  --shadow-sheet: 0 1px 2px rgba(31, 35, 40, 0.06), 0 4px 16px rgba(31, 35, 40, 0.06);
+  --shadow-pop: 0 12px 32px rgba(31, 35, 40, 0.18);
+  --radius-sheet: 12px;
+  --radius: 10px;
+  --radius-sm: 6px;
+  --radius-pill: 999px;
+  /* Type: four sizes, weights 400 and 600; serif only for reading text, mono for terminals, paths and code. */
+  --fs-sm: 12px;
+  --fs-ui: 13px;
+  --fs-read: 15px;
+  --fs-title: 18px;
+  --font-ui: system-ui, sans-serif;
+  --font-read: ui-serif, serif;
+  --font-mono: "JetBrainsMono Nerd Font", "JetBrains Mono", ui-monospace, monospace;
+  --font-title: var(--font-ui);
+  --icon-sm: 12px;
+  --icon: 14px;
+  --icon-md: 16px;
+  /* The names feature CSS consumes. */
+  --bg: var(--paper);
+  --surface: var(--sheet);
+  --surface-2: var(--hover);
+  --border: var(--rule);
+  --text: var(--ink);
+  --muted: var(--ink-2);
+  /* The selected tree row: a sheet of paper in every theme. */
+  --row-selected: var(--paper);
+  --ok: var(--done);
+  --warn: var(--wait);
+  --danger: var(--err);
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --canvas: #0f1114;
+  --sheet: #171a1f;
+  --paper: #1f232a;
+  --hover: #252a32;
+  --rule: #2b3038;
+  --rule-strong: #485060;
+  --ink: #e4e7ec;
+  --ink-2: #a3abb7;
+  --accent: #8aa4ff;
+  --accent-ink: #0f1114;
+  --accent-soft: rgba(138, 164, 255, 0.14);
+  --rose: #ff76c3;
+  --work: #8fb1f0;
+  --wait: #f0c06d;
+  --done: #9fd17f;
+  --sleep: #a3abb7;
+  --err: #f2919f;
+  --work-bg: rgba(143, 177, 240, 0.12);
+  --wait-bg: rgba(240, 192, 109, 0.12);
+  --done-bg: rgba(159, 209, 127, 0.10);
+  --err-bg: rgba(242, 145, 159, 0.12);
+  --well: #0b0c0f;
+  --well-head: #15171b;
+  --overlay: rgba(0, 0, 0, 0.6);
+  --shadow-sheet: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.55);
+  color-scheme: dark;
+}
+/* Gentleman Sexy: the gentle-shell theme (gentle-pi themes/Gentleman-Sexy.json). */
+:root[data-theme="gentleman"] {
+  --canvas: #060407;      /* bg */
+  --sheet: #100a0f;       /* bgPanel */
+  --paper: #1a1018;       /* between bgPanel and userMessageBg */
+  --hover: #28121e;       /* selection */
+  --rule: #2a1720;        /* borderSubtle */
+  --rule-strong: #563040; /* border */
+  --ink: #f6eff3;         /* text */
+  --ink-2: #a78e9b;       /* muted */
+  --accent: #f43888;      /* accent */
+  --accent-ink: #060407;
+  --accent-soft: rgba(244, 56, 136, 0.16);
+  --title: #e0c27a;       /* champagne: mdHeading, toolTitle */
+  --rose: #ff76c3;        /* gentle-shell's official rose */
+  --work: #c49bff;        /* violet: thinkingHigh */
+  --wait: #f2b86d;        /* warning */
+  --done: #a9c7ee;        /* powderBlue: toolDiffAdded */
+  --sleep: #a78e9b;       /* muted */
+  --err: #ff718f;         /* error */
+  --work-bg: rgba(196, 155, 255, 0.12);
+  --wait-bg: rgba(242, 184, 109, 0.12);
+  --done-bg: rgba(169, 199, 238, 0.10);
+  --err-bg: #261019;      /* toolErrorBg */
+  --well: #060407;
+  --well-head: #100a0f;
+  --well-line: #2a1720;
+  --well-ink: #f6eff3;
+  --well-dim: #a78e9b;
+  --well-work: #c49bff;
+  --well-ok: #a9c7ee;
+  --well-warn: #f2b86d;
+  --well-err: #ff718f;
+  --overlay: rgba(6, 4, 7, 0.7);
+  --font-title: var(--font-mono);
+  --shadow-sheet: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(244, 56, 136, 0.14);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: var(--canvas);
+  color: var(--text);
+  font: var(--fs-ui)/1.5 var(--font-ui);
+}
+/* Size limits: under 720×560 the page scrolls instead of squeezing; past 2560px wide it stays centered. */
+body { min-width: 720px; min-height: 560px; max-width: 2560px; margin: 0 auto; }
+/* The top bar, then the view under it (Desarrollo's layout or Seguimiento's), which takes the rest. */
+body { display: flex; flex-direction: column; }
+
+button, input, textarea, select { font: inherit; color: inherit; }
+b, strong, th { font-weight: 600; }
+
+/* Buttons are pills on paper; the accent is kept for what is pressed, primary or focused. */
+.btn {
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  min-height: 28px;
+  padding: 0 12px;
+  cursor: pointer;
+}
+.btn:hover { border-color: var(--rule-strong); background: var(--hover); }
+.btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.btn.icon { padding: 0 8px; }
+/* Small and ghost buttons, as the design's .btn.sm and .btn.ghost; a side's hide button is both. */
+.btn.sm { min-height: 24px; padding: 0 9px; font-size: var(--fs-sm); }
+.btn.ghost, .btn.side-hide { background: transparent; border-color: transparent; }
+.btn.ghost:hover, .btn.side-hide:hover { background: var(--hover); border-color: var(--rule); }
+.btn.side-hide { min-height: 24px; padding: 0 9px; font-size: var(--fs-sm); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn.danger { background: var(--danger); border-color: var(--danger); color: var(--accent-ink); font-weight: 600; }
+.btn:disabled { opacity: 0.6; cursor: progress; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Icons (public/icons.js): one stroke family in currentColor, so each takes the color of its text
+   or state. Scoped to svg: .btn.icon is a button class. */
+svg.icon {
+  display: inline-block;
+  width: var(--icon);
+  height: var(--icon);
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vertical-align: -0.15em;
+}
+.btn > svg.icon { --icon: var(--icon-md); }
+svg.icon.icon-sm { --icon: var(--icon-sm); }
+svg.icon.icon-md { --icon: var(--icon-md); }
+/* Sereno, the gentle-deck agent: an owl in the accent color wherever the autopilot shows. */
+.sereno-ic { color: var(--accent); }
+.btn:has(> svg.icon) { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+/* Agent states: a glyph and a word, never color alone. Each state names its color and its tint. */
+.s-work { --s: var(--work); --s-bg: var(--work-bg); }
+.s-wait { --s: var(--wait); --s-bg: var(--wait-bg); }
+.s-done { --s: var(--done); --s-bg: var(--done-bg); }
+.s-sleep { --s: var(--sleep); --s-bg: transparent; }
+.s-err { --s: var(--err); --s-bg: var(--err-bg); }
+svg.glyph { color: var(--s); }
+/* The sprite has one chevron to the right: the previous day mirrors it. */
+#day-prev > svg.icon { transform: scaleX(-1); }
+
+kbd, code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.muted { color: var(--muted); }
+
+/* Top bar: 52px, the design's first grid row. */
+.topbar {
+  flex: none;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 16px;
+  background: var(--canvas);
+}
+@media (max-width: 959px) {
+  .topbar { gap: 10px; padding: 0 10px; }
+}
+/* The mark draws its cursor in --accent (a style attribute on its last path, public/icons.js). */
+.brand { display: flex; align-items: center; gap: 8px; font-size: var(--fs-title); font-weight: 600; white-space: nowrap; }
+.brand > svg.icon { --icon: 20px; }
+.topbar-slot { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+.topbar-slot:empty { display: none; }
+/* Only what informs (the night chip, free memory) and the "Ajustes" button (styles/settings.css). */
+.topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+/* A segmented control is a pill track; the pressed option is a sheet of paper on it. */
+.segmented { display: flex; width: fit-content; padding: 2px; background: var(--hover); border: 1px solid var(--border); border-radius: var(--radius-pill); }
+.segmented .btn { min-height: 26px; border-radius: var(--radius-pill); position: relative; background: transparent; border-color: transparent; }
+.segmented .btn:first-child { border-radius: var(--radius-pill); }
+.segmented .btn:last-child { border-radius: var(--radius-pill); }
+/* Overlap the shared 1px edge instead of dropping it, so a hovered, focused or pressed
+   button sits on top and shows its accent border on all four sides. */
+.segmented .btn + .btn { margin-left: -1px; }
+.segmented .btn:hover, .segmented .btn:focus-visible { z-index: 2; }
+.segmented .btn[aria-pressed="true"] { z-index: 1; }
+.segmented .btn:hover { background: transparent; border-color: var(--rule-strong); }
+.segmented .btn[aria-pressed="true"] { background: var(--paper); border-color: var(--border); box-shadow: var(--shadow-sheet); font-weight: 600; }
+
+/* Layout */
+.layout {
+  /* The width of a column nobody resized: the design's clamps. A saved or dragged width is set
+     inline on #layout (public/columns.js) and wins; columns.js mirrors these in defaultWidth(). */
+  --sidebar-w: clamp(220px, 20vw, 320px);
+  --panel-w: clamp(300px, 25vw, 420px);
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--sidebar-w, 300px) minmax(0, 1fr) var(--panel-w, 360px);
+  /* The three columns float as sheets on the canvas (.sheet-like rules below). */
+  gap: 8px;
+  padding: 0 8px 8px;
+}
+/* Both views fill the window under the top bar. */
+.layout, .app-view { flex: 1 1 0; min-height: 0; }
+/* A hidden side gives its column to the terminals; its topbar button brings it back. */
+.layout.sidebar-hidden { grid-template-columns: minmax(0, 1fr) var(--panel-w, 360px); }
+.layout.panel-hidden { grid-template-columns: var(--sidebar-w, 300px) minmax(0, 1fr); }
+.layout.sidebar-hidden.panel-hidden { grid-template-columns: minmax(0, 1fr); }
+.layout.sidebar-hidden > .sidebar, .layout.panel-hidden > .panel { display: none; }
+
+/* The topbar's drawer buttons (the design's .show-side and .show-panel): each shows while its
+   side is hidden or a drawer, and never over Seguimiento, which hides #layout. */
+.topbar .btn.side-show { display: none; }
+body:has(> #layout:is(.sidebar-hidden, .drawer-sidebar):not([hidden])) .side-show[data-side="sidebar"],
+body:has(> #layout:is(.panel-hidden, .drawer-panel):not([hidden])) .side-show[data-side="panel"] { display: inline-flex; }
+.side-head-actions { display: flex; gap: 4px; }
+
+/* Column handles (public/columns.js): drag, arrow keys, double-click to reset. Each sits in the
+   middle of the 8px gap between two sheets (.layout padding 8px + gap 8px). */
+.col-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  margin-left: -3px;
+  z-index: 5;
+  cursor: col-resize;
+  touch-action: none;
+}
+.col-handle::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 1px; background: transparent; transition: background 0.12s; }
+.col-handle:hover::after, .col-handle:focus-visible::after, .col-handle.dragging::after { background: var(--accent); width: 2px; left: 2px; }
+.col-handle:focus-visible { outline: none; }
+.col-handle[data-col="sidebar"] { left: calc(var(--sidebar-w, 300px) + 12px); }
+.col-handle[data-col="panel"] { left: calc(100% - var(--panel-w, 360px) - 12px); }
+.layout.sidebar-hidden .col-handle[data-col="sidebar"] { display: none; }
+.layout.panel-hidden .col-handle[data-col="panel"] { display: none; }
+body.resizing-cols { cursor: col-resize; user-select: none; }
+body.resizing-cols .pane-body { pointer-events: none; }
+
+/* Drawers (public/features/drawers.js; "Responsive" in the design): under 1280px the panel, and
+   under 960px the sidebar too, leave the grid and wait off screen as sheets over the terminals;
+   their topbar button slides them in at their saved width, else the design's. */
+/* With the panel folded the tree narrows. A drawer side drops its default
+   (`initial` makes var() use its fallback), so a drawer keeps its own width unless one was saved. */
+/* A closed drawer waits off screen: the layout clips it, as the design's .app, without scrolling. */
+.layout.drawer-panel { --sidebar-w: clamp(220px, 26vw, 300px); --panel-w: initial; grid-template-columns: var(--sidebar-w, 300px) minmax(0, 1fr); overflow: clip; }
+.layout.drawer-panel.sidebar-hidden { grid-template-columns: minmax(0, 1fr); }
+.layout.drawer-sidebar { --sidebar-w: initial; grid-template-columns: minmax(0, 1fr); }
+/* Above the column handles (z-index 5) and the scrim, as the design stacks them. */
+.layout.drawer-panel > .panel { position: absolute; z-index: 40; top: 0; right: 8px; bottom: 8px; width: min(var(--panel-w, 400px), calc(100% - 64px)); box-shadow: var(--shadow-pop); transform: translateX(calc(100% + 16px)); visibility: hidden; }
+.layout.drawer-sidebar > .sidebar { position: absolute; z-index: 40; top: 0; left: 8px; bottom: 8px; width: min(var(--sidebar-w, 320px), calc(100% - 64px)); box-shadow: var(--shadow-pop); transform: translateX(calc(-100% - 16px)); visibility: hidden; }
+.layout[data-open="panel"] > .panel { transform: none; visibility: visible; }
+.layout[data-open="sidebar"] > .sidebar { transform: none; visibility: visible; }
+.drawer-scrim { display: none; }
+.layout[data-open] > .drawer-scrim { display: block; position: absolute; inset: 0; z-index: 35; background: rgba(31, 35, 40, 0.24); }
+.layout.drawer-sidebar .col-handle[data-col="sidebar"], .layout.drawer-panel .col-handle[data-col="panel"] { display: none; }
+/* The drawers slide in under Motion, at the end of this sheet. */
+
+/* Sidebar (workspace groups: styles/workspaces.css) */
+/* The three columns: sheets with a radius and a soft shadow. */
+.sidebar, .workspace, .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sheet); box-shadow: var(--shadow-sheet); }
+/* The head, the tree (which scrolls) and the "Estados" footer at the bottom. */
+.sidebar { display: flex; flex-direction: column; overflow: hidden; }
+/* Rows are pills, 16px of indent per level (indent() in features/workspaces.js); the selected row is a sheet of paper. */
+.row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding-right: 6px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.row:hover { background: var(--hover); }
+.row.selected { background: var(--row-selected); box-shadow: var(--shadow-sheet), inset 0 0 0 1px var(--rule); }
+/* The folder of the terminal you are looking at (workspaces.js markActive), selected or not. */
+.row.has-active { box-shadow: inset 3px 0 0 var(--accent); }
+.row.selected.has-active { box-shadow: var(--shadow-sheet), inset 0 0 0 1px var(--rule), inset 3px 0 0 var(--accent); }
+.caret {
+  width: 12px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  padding: 0;
+  cursor: pointer;
+}
+.caret > svg.icon { --icon: var(--icon-sm); }
+.caret[disabled] { visibility: hidden; }
+/* The state glyph sits left of the name, so it is not mistaken for an action; a row without a
+   state shows no gap, so names follow the tree's indent. */
+.glyph-slot { flex: none; width: 14px; display: inline-flex; align-items: center; justify-content: center; }
+.glyph-slot:empty { display: none; }
+/* The name takes the room left, so its repo icon and badge sit at the row's end; it is
+   clipped with … beyond it, and never narrower than 7ch (fitRow reads this minimum). */
+.name { flex: 1 1 auto; min-width: 7ch; overflow: hidden; text-overflow: ellipsis; }
+.row.selected .name { font-weight: 600; }
+svg.icon.repo { --icon: var(--icon-sm); color: var(--ink-2); }
+/* The git mark is a button (lazygit): no chrome at rest; hovered, it takes the accent (tint, rule
+   and icon), and it sinks a little when pressed, so it reads as clickable without looking heavier
+   than the name. */
+.repo-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 1px solid transparent; border-radius: var(--radius-sm); background: none; cursor: pointer; }
+.repo-btn:hover { background: var(--accent-soft); border-color: var(--accent); }
+.repo-btn:hover > svg.icon.repo { color: var(--accent); }
+.repo-btn:active { background: color-mix(in srgb, var(--accent) 30%, var(--paper)); }
+/* Hovered, focused or selected, a row shows its actions at its right end, on its one line, beside
+   the name and never over it: fitRow (features/workspaces.js) keeps the ones that fit after the
+   name's minimum width and moves the rest into the row's "⋯" menu, which opens under them.
+   `.fitting` shows them while it measures. */
+.row-actions { display: none; flex: none; align-items: center; gap: 2px; margin-left: auto; position: relative; }
+/* !important: an icon button (`.btn:has(> svg.icon)`, inline-flex) outranks this selector. */
+.row-actions > [hidden] { display: none !important; }
+.row:hover .row-actions, .row:focus-within .row-actions, .row.selected .row-actions, .row.fitting .row-actions { display: flex; }
+/* The design's small ghost buttons; on the selected row the first one (gentle-shell) is a paper pill. */
+.row-actions .btn { min-height: 24px; padding: 0 9px; font-size: var(--fs-sm); background: transparent; border-color: transparent; }
+.row-actions .btn:hover { background: var(--hover); border-color: var(--rule); }
+.row.selected .row-actions > .btn:first-child { background: var(--paper); border-color: var(--rule); }
+.row-actions .btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+
+/* Terminals: paper cards whose body is a dark well (artboard 03 .terms, .pane, .well). */
+.workspace { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+/* The tabs strip (the design's .tabs-demo); inside the sheet it keeps only the line under it. */
+.tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 6px 8px 0;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  background: var(--hover);
+}
+/* The grid shows its own group headers, so the tabs bar hides there (terminals.js applyLayout). */
+.tabs[hidden] { display: none; }
+.tab { position: relative; display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 10px; border: 1px solid transparent; border-bottom: 0; border-radius: var(--radius-sm) var(--radius-sm) 0 0; background: none; cursor: grab; white-space: nowrap; }
+.tab[aria-selected="true"] { background: var(--paper); border-color: var(--rule); }
+/* The agent's state glyph (terminals.js paintState) at the design's 14px, not the inbox's 12px mark. */
+.tab > .term-mark > svg.icon { --icon: inherit; }
+/* The agent's icon before an agent tab's title (terminals.js paintAgent): the tab's 14px, in its
+   text color, the rose in --rose (styles/workspaces.css); its name is for screen readers only. */
+.agent-mark { display: inline-flex; flex: none; }
+.agent-mark:empty { display: none; }
+.agent-mark > .agent-name { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+/* A shell says bash, and a tab without a state says how its process ended. */
+.tab .kind, .pane-head .kind { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--accent); }
+.tab.exited .kind { color: var(--warn); }
+.tab .kind:empty, .pane-head .kind:empty { display: none; }
+.close { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border: 0; border-radius: var(--radius-pill); background: none; color: var(--ink-2); cursor: pointer; }
+.close:hover { background: var(--err-bg); color: var(--err); }
+
+.panes { flex: 1; min-height: 0; position: relative; }
+.panes[data-layout="tabs"] .pane { position: absolute; inset: 0; display: none; }
+.panes[data-layout="tabs"] .pane.active { display: flex; }
+/* While the state filter hides the active terminal, the first one it keeps stands in (terminals.js
+   showPane); the hidden active pane must not show under it: [hidden] comes later, at .active's weight. */
+.panes[data-layout="tabs"] .pane.stand-in { display: flex; }
+.panes[data-layout="tabs"] .pane[hidden] { display: none; }
+.panes[data-layout="tabs"] .pane-head { display: none; }
+/* The design's sheet: 10px around, 8px between panes and 10px between groups. Under the launch
+   notice (styles/launches.css, 10px above it plus its own 2px) the top keeps the 10px. */
+.panes[data-layout="grid"] { display: grid; gap: 8px; padding: 10px; }
+.panes[data-layout="grid"] .pane + .pane-group-head { margin-top: 2px; }
+.launch-bar:not([hidden]) ~ .panes[data-layout="grid"] { padding-top: 8px; }
+/* A narrow area stacks the panes in one column; each keeps a usable height and the grid scrolls (terminals.js applyLayout). */
+.panes[data-layout="grid"][data-stacked] { overflow-y: auto; }
+.pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  container-type: inline-size;
+}
+/* A narrow pane hides its place under 420px, then its figures under 340px (the design's .pane
+   container queries); styles/resources.css keeps the close at the end past the hidden badge. */
+@container (max-width: 420px) { .pane-head .cwd { display: none; } }
+@container (max-width: 340px) { .pane-head .res-badge { display: none; } }
+/* A grid pane is a paper card; its body is the dark well. */
+.panes[data-layout="grid"] .pane { background: var(--paper); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sheet); overflow: hidden; }
+.panes[data-layout="grid"] .pane.active { border-color: var(--accent); box-shadow: var(--shadow-sheet), 0 0 0 2px var(--accent-soft); }
+/* The state border wins over the active one (terminals.js paintState). */
+.panes[data-layout="grid"] .pane.waiting { border-color: var(--wait); }
+.panes[data-layout="grid"] .pane.error { border-color: var(--err); }
+/* Grip, state pill, title, place, figures (features/resources.js) and close, in the design order. */
+.pane-head { position: relative; display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 6px 0 12px; border-radius: var(--radius) var(--radius) 0 0; }
+.pane-head > svg.grip { color: var(--ink-2); margin-left: -6px; }
+/* The close button always stays inside the pane: the place takes only the room left (a zero
+   basis, so it never overflows the head), and the title gives way with … only when that is none. */
+.pane-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.pane-head .cwd { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--ink-2); }
+.pane-head .close { flex: none; margin-left: auto; }
+/* RAM and CPU: sans tabular figures, as the design's "1,4 GB · 3 %". */
+.pane-head .res-badge, .tab .res-badge { flex: none; font-family: var(--font-ui); font-size: var(--fs-sm); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+/* State pill: glyph + word, never color alone (the .s-* rules name its colors). */
+.st { display: inline-flex; align-items: center; gap: 5px; flex: none; padding: 0 9px; border-radius: var(--radius-pill); font-size: var(--fs-sm); font-weight: 600; line-height: 20px; white-space: nowrap; color: var(--s); background: var(--s-bg); }
+.st.s-sleep { box-shadow: inset 0 0 0 1px var(--rule-strong); }
+.st[hidden] { display: none; }
+.st > svg.icon { --icon: var(--icon-sm); }
+/* Terminals keep a dark well in every theme; xterm paints the same --well (public/terminals.js).
+   FitAddon sizes the terminal to the computed width and height of this element, which leave the
+   design's 10×12 padding out only in the content box. */
+.pane-body { flex: 1; min-height: 0; box-sizing: content-box; padding: 10px 12px; background: var(--well); border-radius: 7px; overflow: hidden; }
+.panes[data-layout="tabs"] .pane-body { margin: 6px; }
+.panes[data-layout="grid"] .pane-body { margin: 0 6px 6px; }
+.pane-body .xterm { height: 100%; }
+/* Below the last whole row xterm 6 leaves its inert viewport showing (black, with a native
+   scrollbar); the well paints it, and the terminal scrolls with its own scrollbar. */
+.pane-body .xterm .xterm-viewport { background-color: var(--well); scrollbar-width: none; }
+
+.empty-state { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; color: var(--muted); padding: 24px; }
+.panes:has(.pane) .empty-state { display: none; }
+
+/* Summary panel ("Dónde quedó" in the design): a crumb with the selection's place over the
+   18px title, the Engram project in small muted type, then the view segment. Below the head the
+   view shows one of its parts (public/features/summary.js): the inbox cards ("Te esperan"), or the
+   body, under the date nav in "Día". It clips (not `hidden`, which script and focus can still
+   scroll): nothing can push its content sideways; .panel-body scrolls, up and down. */
+.panel { display: flex; flex-direction: column; min-height: 0; overflow: clip; }
+.panel-head { display: grid; gap: 10px; padding: 14px 16px 12px; border-bottom: 1px solid var(--rule); }
+.panel-top { display: flex; align-items: flex-start; gap: 8px; }
+.panel-top .panel-title { flex: 1; min-width: 0; }
+.panel-top > .btn { flex: none; }
+.crumb { margin: 0; font-size: var(--fs-sm); color: var(--ink-2); }
+.panel-title h2 { margin: 2px 0 0; font-size: var(--fs-title); font-weight: 600; line-height: 1.3; }
+.panel-title p { margin: 2px 0 0; font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.panel-title p.crumb { margin: 0; }
+.panel-title p:empty { display: none; }
+.date-nav { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.panel > .date-nav { padding: 16px 16px 0; }
+.date-nav[hidden], .inbox-slot[hidden], .panel-body[hidden] { display: none; }
+.btn { white-space: nowrap; }
+.date-nav input { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-pill); padding: 2px 10px; }
+.panel-body { min-height: 0; padding: 16px; flex: 1; display: flex; flex-direction: column; gap: 18px; overflow: auto; }
+
+.stats { display: flex; gap: 8px; flex-wrap: wrap; }
+.stat { background: var(--surface-2); border-radius: var(--radius-sm); padding: 4px 8px; }
+.stat strong { font-variant-numeric: tabular-nums; }
+
+.card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
+.card h3, .group h3 { margin: 0 0 6px; font-size: var(--fs-sm); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.group ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.item summary { cursor: pointer; display: flex; gap: 8px; padding: 3px 4px; border-radius: var(--radius-sm); list-style: none; }
+.item summary::-webkit-details-marker { display: none; }
+.item summary:hover { background: var(--surface-2); }
+.item time { color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
+.item .badge { color: var(--warn); font-size: var(--fs-sm); flex: none; }
+.item .md { margin: 4px 0 8px 4px; padding: 8px 10px; border-left: 2px solid var(--border); }
+
+.md { font-size: var(--fs-ui); overflow-wrap: anywhere; }
+.md h4 { margin: 10px 0 4px; font-size: var(--fs-ui); }
+.md h4:first-child { margin-top: 0; }
+.md p { margin: 4px 0; }
+.md ul { margin: 4px 0; padding-left: 18px; }
+.md pre { background: var(--surface-2); padding: 8px; border-radius: var(--radius-sm); overflow-x: auto; font-family: var(--font-mono); font-size: var(--fs-sm); }
+
+.project-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.project-list > li { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; }
+.project-list .head { display: flex; justify-content: space-between; gap: 8px; font-weight: 600; }
+.project-list .titles { margin: 4px 0 0; padding-left: 16px; color: var(--muted); }
+
+.notice { color: var(--muted); }
+.notice.error { color: var(--danger); }
+
+/* Panel views switch (shown when more than one view applies), in the head as the design's .seg */
+.panel-views { justify-self: start; }
+.panel-views[hidden] { display: none; }
+/* It always fits (the design's .seg.fit): it spans the head,
+   its parts share the width by the length of their text and only then shorten it with "…"; the
+   count of "Te esperan (N)" never shortens. */
+.panel-views.segmented { width: 100%; box-sizing: border-box; }
+.panel-views .btn { display: inline-flex; align-items: center; justify-content: center; gap: 4px; flex: 1 1 auto; min-width: 0; padding: 0 6px; }
+.panel-views .lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel-views .n { flex: none; font-variant-numeric: tabular-nums; }
+
+.overlay { position: fixed; inset: 0; background: var(--overlay); display: grid; place-items: center; }
+.overlay[hidden] { display: none; }
+.overlay-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sheet); box-shadow: var(--shadow-pop); padding: 20px 24px; max-width: 420px; }
+.overlay-card h2 { margin-top: 0; }
+
+/* The floating lazygit panel (git-panel.js): most of the window, over the deck and its tabs. */
+.git-panel-overlay { z-index: 100; }
+.git-panel { display: flex; flex-direction: column; width: min(1400px, 90vw); height: 86vh; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sheet); box-shadow: var(--shadow-pop); overflow: hidden; }
+.git-panel-head { flex: none; display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; border-bottom: 1px solid var(--border); font-size: var(--fs-sm); }
+.git-panel-head > svg.icon { --icon: var(--icon-sm); color: var(--accent); }
+.git-panel-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.git-panel-body { flex: 1 1 auto; min-height: 0; padding: 10px 12px; background: var(--well); overflow: hidden; }
+
+/* Gentleman: titles in champagne and the terminal font, as gentle-shell draws headings and tool
+   titles; links and the accent in pink, selection in deepPink (searchMatchBg). */
+:root[data-theme="gentleman"] :is(.brand, .sidebar-head h2, .panel-title h2, .dialog h2, .tracking-strip-title h1, .tracking-lane-head h2, .tracking-dock-head h2, .term-group-name) { color: var(--title); font-family: var(--font-title); letter-spacing: 0; }
+:root[data-theme="gentleman"] .crumb { color: var(--accent); }
+:root[data-theme="gentleman"] ::selection { background: #bf0f50; color: #f6eff3; }
+:root[data-theme="gentleman"] code { color: var(--title); }
+
+/* Motion: short and soft, like the TUI, and only when the user has not asked for less. The working
+   indicator breathes, focus glows pink and buttons change in 120 ms. */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme="gentleman"] :is(.working .tracking-lane-glyph, .s-work svg.icon, svg.glyph.s-work) { animation: gd-breathe 1.8s ease-in-out infinite; }
+  :root[data-theme="gentleman"] :focus-visible { box-shadow: 0 0 0 4px var(--accent-soft); transition: box-shadow 0.12s ease; }
+  :root[data-theme="gentleman"] .btn { transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease; }
+  /* The tree's git mark sinks a little when pressed, in every theme. */
+  .repo-btn { transition: background 0.12s ease, border-color 0.12s ease, transform 0.08s ease; }
+  .repo-btn:active { transform: scale(0.9); }
+}
+@keyframes gd-breathe { 50% { opacity: 0.45; } }
+/* A drawer (Drawers, above) slides in and out from its side. */
+@media (prefers-reduced-motion: no-preference) {
+  .layout.drawer-sidebar > .sidebar, .layout.drawer-panel > .panel { transition: transform 0.18s ease, visibility 0s 0.18s; }
+  .layout[data-open="sidebar"] > .sidebar, .layout[data-open="panel"] > .panel { transition: transform 0.18s ease; }
+}

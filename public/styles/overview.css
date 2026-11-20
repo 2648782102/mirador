@@ -1,0 +1,183 @@
+/* Workspace overview and "where it left off" (public/features/overview.js). */
+.overview-warn { color: var(--warn); }
+
+.overview-summary h4 { margin: 10px 0 4px; font-size: var(--fs-sm); color: var(--muted); }
+.overview-headlines { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.overview-headlines li { display: flex; gap: 8px; justify-content: space-between; align-items: baseline; }
+.overview-headlines li > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.overview-link { flex: none; background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font-size: var(--fs-sm); }
+.overview-link:hover { text-decoration: underline; }
+
+.overview-folders h3 { margin: 0 0 6px; font-size: var(--fs-sm); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.overview-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.overview-row { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; display: grid; gap: 4px; cursor: pointer; }
+.overview-row:hover { border-color: var(--accent); }
+.overview-row.root { cursor: default; }
+.overview-row.root:hover { border-color: var(--border); }
+.overview-row.empty { border-style: dashed; }
+.overview-row-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.overview-name { font-weight: 600; background: none; border: 0; padding: 0; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+span.overview-name { cursor: default; }
+.overview-when { margin-left: auto; color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.overview-day { flex: none; font-size: var(--fs-sm); color: var(--ok); border: 1px solid var(--border); border-radius: 8px; padding: 0 6px; }
+.overview-goal { margin: 0; overflow-wrap: anywhere; }
+.overview-label { display: block; font-size: var(--fs-sm); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.overview-goal .overview-label { display: inline; }
+.overview-since { margin: 0; color: var(--muted); overflow-wrap: anywhere; }
+.overview-actions { display: flex; gap: 6px; }
+
+/* The mission and a row's next steps keep their first lines (--clip-lines, from public/leftoff-model.js
+   CLIP_LINES), faded at the foot while text is hidden; "Ver más" under them opens the rest and shows
+   only when the text overflows. */
+.overview-clip { max-height: calc(var(--clip-lines, 3) * 1lh); overflow: hidden; }
+.overview-clip.open { max-height: none; }
+.overview-clip.clipped { mask-image: linear-gradient(to bottom, #000 calc(100% - 1lh), transparent); -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1lh), transparent); }
+.overview-clip > .md > :first-child { margin-top: 0; }
+/* .btn.: an icon button (styles.css .btn:has(> svg.icon), inline-flex) outranks the bare class. */
+.btn.overview-clip-toggle { gap: 4px; margin-left: -9px; color: var(--ink-2); }
+.btn.overview-clip-toggle[hidden] { display: none; }
+.overview-clip-toggle[aria-expanded="true"] .icon { transform: rotate(180deg); }
+@media (prefers-reduced-motion: no-preference) {
+  .overview-clip-toggle .icon { transition: transform 0.15s ease; }
+}
+
+/* "Where it left off" reads in three levels (public/leftoff-model.js): act (the call, the only
+   colored block), read (the objective in the reading face) and context (a small muted footer).
+   Long parts fold behind a one-line gist; hairlines separate them, never boxes inside boxes. */
+.leftoff-call { display: grid; gap: 6px; padding: 12px 14px; background: var(--wait-bg); border-left: 3px solid var(--wait); border-radius: var(--radius-sm); }
+.leftoff-call-kicker { margin: 0; display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); font-weight: 600; color: var(--wait); }
+.leftoff-call-text { margin: 0; overflow-wrap: anywhere; }
+.leftoff-call-detail { display: block; margin: 0; overflow-wrap: anywhere; }
+code.leftoff-call-detail { padding: 6px 10px; background: var(--paper); border: 1px solid var(--rule); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: var(--fs-sm); }
+.leftoff-call-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 4px; font-size: var(--fs-sm); }
+
+.overview-leftoff { display: grid; gap: 18px; padding-bottom: 18px; border-bottom: 1px solid var(--rule); }
+.overview-leftoff > p { margin: 0; }
+.leftoff-eyebrow { margin: 0 0 4px; font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2); }
+.leftoff-read { margin: 0; font-family: var(--font-read); font-size: var(--fs-read); line-height: 1.55; max-width: 60ch; overflow-wrap: anywhere; }
+.leftoff-read .md { font-size: inherit; }
+.leftoff-read .md > :first-child { margin-top: 0; }
+.leftoff-read .md > :last-child { margin-bottom: 0; }
+/* A long objective reads like a book (the design's .goal-pages):
+   six lines high, one column as wide as the box, the next ones beside it, scrolled one page at a
+   time by public/features/overview.js; it never pushes the folds below it down. */
+.leftoff-pages { height: 6lh; columns: 1; column-gap: 32px; column-fill: auto; overflow: hidden; border-radius: 4px; }
+/* One that fits on a page needs no pager and sizes to its text; overview.js counts the pages
+   at the page height again whenever the box or its text changes. */
+.leftoff-pages.fits { height: auto; }
+/* A fold's body (Siguientes pasos, Hecho...) pages too, taller, so a long list never makes the
+   sidebar scroll; an item stays whole on one page. */
+.leftoff-pages.fold-pages { height: 12lh; }
+.leftoff-pages.fold-pages.fits { height: auto; }
+.fold-pages li { break-inside: avoid; }
+.leftoff-pages:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+@media (prefers-reduced-motion: no-preference) {
+  .leftoff-pages { scroll-behavior: smooth; }
+}
+.leftoff-pager { display: flex; align-items: center; justify-content: flex-end; gap: 2px; margin-top: 10px; }
+.leftoff-pager[hidden] { display: none; }
+.leftoff-pager .btn { min-height: 26px; padding: 0 6px; }
+.leftoff-pager .btn:disabled { opacity: 0.4; cursor: default; }
+.leftoff-pager .prev .icon { transform: scaleX(-1); }
+.leftoff-page-n { min-width: 4ch; text-align: center; font-size: var(--fs-sm); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+
+.leftoff-folds { display: grid; border-top: 1px solid var(--rule); }
+.leftoff-fold { border-bottom: 1px solid var(--rule); }
+.leftoff-fold > summary { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 4px; list-style: none; cursor: pointer; border-radius: var(--radius-sm); }
+.leftoff-fold > summary::-webkit-details-marker { display: none; }
+.leftoff-fold > summary:hover { background: var(--hover); }
+.leftoff-fold > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.leftoff-caret { flex: none; color: var(--ink-2); transition: transform 0.15s ease; }
+.leftoff-fold[open] > summary .leftoff-caret { transform: rotate(90deg); }
+.leftoff-fold-title { flex: none; font-weight: 600; }
+.leftoff-fold-gist { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+/* The design's .fold-list: text 28px in, its bullets hanging in that margin, 4px between items. */
+.leftoff-fold-body { padding: 0 4px 12px 28px; }
+.leftoff-fold-body > .md > ul { margin: 0; padding-left: 0; }
+
+.leftoff-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding-top: 10px; font-size: var(--fs-sm); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.leftoff-since { flex-basis: 100%; overflow-wrap: anywhere; }
+
+@media (prefers-reduced-motion: reduce) {
+  .leftoff-caret { transition: none; }
+}
+
+/* Memory text (public/markdown.js over public/memory-text.js): labelled fields, lists, glossary. */
+.md .mem-field { margin: 0 0 10px; }
+.md .mem-field:last-child { margin-bottom: 0; }
+.md .mem-label { display: block; margin-bottom: 2px; font-size: var(--fs-sm); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.md .mem-value > :first-child { margin-top: 0; }
+.md .mem-value > :last-child { margin-bottom: 0; }
+.md ul, .group .md ul { display: block; list-style: disc; margin: 4px 0; padding-left: 18px; }
+.md li + li { margin-top: 2px; }
+/* After .md: a fold's items keep the design's 4px apart (.leftoff-fold-body, above). */
+.leftoff-fold-body li + li { margin-top: 4px; }
+.md li::marker { color: var(--muted); }
+.md ol, .group .md ol { display: block; list-style: decimal; margin: 4px 0; padding-left: 22px; }
+.md li > ul, .md li > ol { margin: 2px 0 0; }
+.md li.mem-task { list-style: none; }
+.md .mem-check { display: inline-block; width: 1.2em; margin-left: -1.2em; color: var(--muted); }
+.md .mem-task.is-done .mem-check { color: var(--accent); }
+abbr.mem-abbr { text-decoration: underline dotted var(--muted); text-underline-offset: 2px; cursor: pointer; }
+abbr.mem-abbr[aria-expanded='true'] { text-decoration-style: solid; }
+abbr.mem-abbr:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 2px; }
+.mem-abbr-note { margin-left: 4px; padding: 0 5px; border-radius: 4px; background: var(--surface-2, rgba(127, 127, 127, 0.14)); color: var(--muted); font-size: var(--fs-sm); }
+.mem-abbr-note[hidden] { display: none; }
+.mem-glossary summary { cursor: pointer; color: var(--muted); font-size: var(--fs-sm); }
+.mem-glossary dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 10px; margin: 8px 0 0; font-size: var(--fs-sm); }
+.mem-glossary dt { font-family: var(--font-mono); color: var(--accent); }
+.mem-glossary dd { margin: 0; overflow-wrap: anywhere; }
+
+/* Workspace mission: the card at the top of the workspace summary and its edit dialog. */
+.overview-mission-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.overview-mission-head h3 { margin: 0 0 6px; }
+.overview-mission .md { overflow-wrap: anywhere; }
+.overview-mission .md h4 { margin: 10px 0 4px; font-size: var(--fs-sm); color: var(--muted); }
+.overview-mission .md p { margin: 0 0 6px; }
+.dialog.mission-dialog { width: min(680px, calc(100vw - 32px)); }
+.mission-text {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 12em;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+.mission-text[aria-invalid="true"] { border-color: var(--danger); }
+
+/* Plain mode's "Where it left off" (public/features/plain-left-off.js): git and NOTES.md, no Engram. */
+.plain-leftoff { display: grid; gap: 6px; padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid var(--rule); max-width: 72ch; }
+.plain-leftoff-title { margin: 0 0 2px; font-size: var(--fs-sm); font-weight: 600; }
+.plain-leftoff .leftoff-eyebrow { margin-top: 6px; }
+.plain-leftoff p { margin: 0; }
+.plain-git-line { overflow-wrap: anywhere; }
+.plain-git-label, .plain-git-kind, .plain-git-more, .plain-leftoff time { color: var(--muted); font-size: var(--fs-sm); }
+.plain-git-changes, .plain-git-log { margin: 0; padding-left: 18px; display: grid; gap: 2px; font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.plain-leftoff code { font-family: var(--font-mono); font-size: var(--fs-sm); }
+.plain-notes { margin: 0; padding: 8px 10px; max-height: 40vh; overflow: auto; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: var(--fs-sm); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.plain-leftoff:last-child { border-bottom: 0; margin-bottom: 0; }
+
+/* The "Changes" view (public/features/changes-panel.js): the stat, then each file's diff with one
+   span per line; the line kind is a class and the sign (+, -, @@) stays in the text, never colour alone. */
+.changes-stat, .changes-untracked { display: grid; gap: 6px; margin-bottom: 12px; }
+.changes-stat p, .changes-untracked p { margin: 0; }
+.changes-summary { font-weight: 600; }
+.changes-files { margin: 0; padding-left: 18px; display: grid; gap: 2px; font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.changes-files code, .changes-file summary code { font-family: var(--font-mono); font-size: var(--fs-sm); }
+.changes-added { color: var(--done); font-family: var(--font-mono); font-size: var(--fs-sm); }
+.changes-removed { color: var(--err); font-family: var(--font-mono); font-size: var(--fs-sm); }
+.changes-binary, .changes-more { color: var(--muted); font-size: var(--fs-sm); }
+.changes-file { margin-bottom: 10px; }
+.changes-file summary { cursor: pointer; padding: 2px 0; overflow-wrap: anywhere; }
+.changes-diff { margin: 4px 0 0; padding: 6px 0; max-height: 60vh; overflow: auto; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: var(--fs-sm); line-height: 1.45; }
+.diff-line { display: block; padding: 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.diff-add { color: var(--done); background: var(--done-bg); }
+.diff-del { color: var(--err); background: var(--err-bg); }
+.diff-hunk { color: var(--accent); background: var(--accent-soft); }
+.diff-file { color: var(--muted); font-weight: 600; }
+.diff-note { color: var(--muted); font-style: italic; }

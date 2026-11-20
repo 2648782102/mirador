@@ -1,0 +1,91 @@
+/* The topbar's "Ajustes" sheet, its switch and the night chip (public/features/settings.js,
+   "Barra superior"). */
+.settings { position: relative; }
+/* 32px and never squeezed by the figure beside them. */
+.btn.icon-btn { width: 32px; min-height: 32px; padding: 0; flex: none; }
+.btn.icon-btn[aria-expanded="true"] { background: var(--hover); border-color: var(--rule-strong); }
+
+.settings-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  display: grid;
+  gap: 10px;
+  width: 360px;
+  max-width: calc(100vw - 24px);
+  padding: 12px 14px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sheet);
+  box-shadow: var(--shadow-pop);
+}
+.settings-pop[hidden] { display: none; }
+.set-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.set-row[hidden] { display: none; }
+.set-label { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-sm); color: var(--ink-2); }
+/* Sereno's owl is drawn larger so it reads as an owl; the negative margin keeps the 14px box, so the
+   row's text lines up with the rows below. */
+.set-label > svg.sereno-ic { --icon: 18px; margin: -2px; }
+/* A row's name with its hint under it: "Sereno cuida mientras no estás." */
+.set-text { display: grid; gap: 1px; }
+.set-hint { font-size: 11px; color: var(--ink-2); opacity: 0.85; }
+/* Rendered from the start with a line reserved, so an error is announced when it appears (role=alert). */
+.settings-error { margin: 0; min-height: 1.45em; font-size: var(--fs-sm); color: var(--danger); }
+
+/* Switch: the only on/off setting; the others pick between named options. Its word says the state too. */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px;
+  border: 0;
+  background: none;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.switch:disabled { opacity: 0.6; cursor: not-allowed; }
+.switch[aria-busy="true"] { cursor: progress; }
+.switch-track { position: relative; width: 36px; height: 20px; flex: none; border-radius: var(--radius-pill); background: var(--ink-2); transition: background 0.15s ease; }
+.switch-thumb { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--paper); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); transition: transform 0.15s ease; }
+.switch[aria-checked="true"] { color: var(--ink); }
+.switch[aria-checked="true"] .switch-track { background: var(--accent); }
+.switch[aria-checked="true"] .switch-thumb { transform: translateX(16px); }
+@media (prefers-reduced-motion: reduce) {
+  .switch-track, .switch-thumb { transition: none; }
+}
+
+/* "Piloto automático" in the topbar while the autopilot is on; off it takes no space. Sereno's owl
+   takes the chip's color (.night-chip .sereno-ic { color: inherit }), at the
+   medium size: smaller, it no longer reads as an owl. */
+.night-chip {
+  --icon: var(--icon-md);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: var(--radius-pill);
+  background: var(--hover);
+  color: var(--sleep);
+  box-shadow: inset 0 0 0 1px var(--rule-strong);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.night-chip[hidden] { display: none; }
+
+/* The free-memory figure: the strip's memory line, small and muted. */
+.topbar-figure { font-size: var(--fs-sm); color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.topbar-figure[hidden] { display: none; }
+.topbar-figure strong { color: var(--ink); }
+.topbar-figure .res-memory.low,
+.topbar-figure .res-memory.low strong { color: var(--warn); }
+/* Under 960px the drawer buttons join the topbar and the figure drops its "Memoria libre" label,
+   as the design's .mem-label. */
+@media (max-width: 959px) {
+  .topbar-figure .mem-label { display: none; }
+}

@@ -1,0 +1,36 @@
+/* Modal dialogs and form fields (public/dialog.js). */
+.dialog {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sheet);
+  box-shadow: var(--shadow-pop);
+  padding: 18px 20px;
+  width: min(460px, calc(100vw - 32px));
+}
+/* Older engines do not inherit custom properties into ::backdrop; the fallback reads on every theme. */
+.dialog::backdrop { background: var(--overlay, rgba(15, 17, 20, 0.5)); }
+.dialog h2 { margin: 0 0 12px; font-size: var(--fs-title); }
+.dialog-body { display: grid; gap: 14px; }
+.dialog-body p { margin: 0; }
+.dialog-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.dialog-actions .btn { padding: 5px 12px; }
+/* The × at the top right of a dialog that asks for one (openDialog's `close`), as the other panels close. */
+.dialog-close { position: absolute; top: 14px; right: 14px; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--muted); cursor: pointer; }
+.dialog-close:hover { background: var(--hover); border-color: var(--rule); color: var(--text); }
+.dialog-close > svg.icon { --icon: 16px; }
+.dialog:has(> .dialog-close) > h2 { padding-right: 40px; }
+.field { display: grid; gap: 4px; }
+.field label { font-weight: 600; }
+.field input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+.field input[aria-invalid="true"] { border-color: var(--danger); }
+.hint { color: var(--muted); font-size: var(--fs-sm); }
+.field-error { color: var(--danger); font-size: var(--fs-sm); }
+.field-error:empty { display: none; }

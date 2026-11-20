@@ -1,0 +1,23 @@
+# gitleaks (https://github.com/gitleaks/gitleaks) scans the git history for
+# credentials, locally with `gitleaks git .` and in CI (.github/workflows/test.yml).
+# The default rules apply; the paths below only hold example tokens, never real ones.
+title = "mirador"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Redaction tests use fake tokens shaped like real ones; the inbox tests pass a non-secret --token option; the gitleaks config test plants a fake token"
+paths = [
+  '''^test/night-telegram-answers\.test\.ts$''',
+  '''^test/inbox\.test\.ts$''',
+  '''^test/gitleaks-config\.test\.ts$''',
+]
+
+# Keep this allowlist last: test/gitleaks-config.test.ts drops it to show what it lets through.
+[[allowlists]]
+description = "Subagent ids (8 letters or digits, a number, 4 letters or digits, e.g. mwa0wet9-5-k10r) quoted in task logs look like API keys but are not secrets"
+regexTarget = "secret"
+regexes = [
+  '''^[a-z0-9]{8}-[0-9]+-[a-z0-9]{4}$''',
+]

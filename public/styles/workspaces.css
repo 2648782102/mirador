@@ -1,0 +1,188 @@
+/* Workspaces sidebar (public/features/workspaces.js). */
+/* Positioned: the state menu spans the head under it. A size container: a tight head collapses "Agregar" below. */
+.sidebar-head { position: relative; display: flex; align-items: center; gap: 6px; padding: 12px 10px 6px 16px; container-type: inline-size; }
+.sidebar-head h2 { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; font-size: var(--fs-read); font-weight: 600; }
+/* Agregar and the hide button: the design's small buttons, 6px apart. */
+.sidebar-head .btn { min-height: 24px; padding: 0 9px; font-size: var(--fs-sm); }
+.sidebar-head > :not(h2) { flex: none; }
+.sidebar-head .side-head-actions { gap: 6px; }
+/* A tight head drops "Agregar" to its + (aria-label keeps its name) before the title gives way
+   with "…" (the design's .side-head.tight). The query reads the content box: its widest text,
+   gentleman in Spanish, needs 257px; at 1440 it has 260px. */
+@container (max-width: 258px) { #ws-add > span { display: none; } .sidebar-head #ws-add { width: 28px; padding: 0; justify-content: center; } }
+/* The tree scrolls under the head; its groups are pills with no line between them. */
+/* A thin scrollbar: the design's tree has none, and a full one takes the room of a row action. */
+.tree { flex: 1; min-height: 0; overflow: hidden auto; padding: 0 6px 8px; scrollbar-width: thin; scrollbar-color: var(--rule-strong) var(--surface); }
+.ws-row { gap: 8px; margin-top: 6px; }
+/* The count follows the name, as text; the row's actions still sit at its end. */
+.ws-row .name { flex: 0 1 auto; min-width: 0; font-weight: 600; }
+/* "7 carpetas": the folders the workspace shows, as plain text after its name. */
+.ws-row .count { font-size: var(--fs-sm); color: var(--ink-2); font-weight: 400; font-variant-numeric: tabular-nums; flex: none; }
+.empty-ws { padding: 6px 12px; }
+/* The badge gives way before the name does (shrink weight 1000 against the name's 1): it clips to "…"
+   and keeps its tooltip. While a row fits its actions it is measured at full width. */
+.no-memory { flex: 0 1000 auto; min-width: 2em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); color: var(--ink-2); border: 1px dashed var(--rule-strong); border-radius: var(--radius-pill); padding: 0 7px; line-height: 16px; }
+.row.fitting .no-memory, .row.selected .no-memory { flex: none; }
+
+/* The state filter: the funnel in the head opens a menu
+   of states that spans the head; the picked states show as removable chips under it, and the tree
+   keeps only the folders in a picked state and the folders that hold them. */
+.sidebar-head .filter-btn { width: 28px; padding: 0; justify-content: center; }
+.filter-btn.on { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); }
+.state-menu .ws-more-item > svg.st-ic { color: var(--s); }
+.state-menu .mi-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.state-menu .n { color: var(--ink-2); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.state-menu .ws-more-item > svg.mi-check { visibility: hidden; color: var(--accent); }
+.state-menu [aria-checked="true"] { font-weight: 600; }
+.state-menu [aria-checked="true"] > svg.mi-check { visibility: visible; }
+.active-filter { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0; padding: 2px 12px 8px 16px; font-size: var(--fs-sm); color: var(--ink-2); }
+.active-filter[hidden] { display: none; }
+.af-chip { cursor: pointer; font: inherit; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; min-height: 22px; padding: 0 9px; border: 1px solid var(--s); border-radius: var(--radius-pill); background: var(--s-bg); color: var(--s); }
+.af-chip .n { font-variant-numeric: tabular-nums; opacity: 0.8; }
+.af-chip .x { --icon: var(--icon-sm); opacity: 0.7; }
+.af-chip:hover .x { opacity: 1; }
+.af-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* "Ver todos" after the chips: a text button, as the design's .link. */
+.af-reset { padding: 2px 0; border: 0; background: none; color: var(--accent); font-size: var(--fs-sm); font-weight: 600; cursor: pointer; text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 3px; }
+.af-reset:hover { text-decoration-color: currentColor; }
+.ws.filtered-out { display: none; }
+.row.filtered-out { display: none; }
+/* A folder the filter leaves out takes its subfolders with it. */
+.row.filtered-out + [role="group"] { display: none; }
+.tree-empty { padding: 6px 12px; }
+
+/* Workspace row tools: icon and short text on the selected row. Hovered or focused, an
+   unselected row shows only the icons, so more of them fit beside the name; the text stays their
+   name. The "⋯" button of every row is only its icon. A tight row (fitRow)
+   first collapses gentle-shell to its rose, then moves what still does not fit to "⋯". */
+.ws-tool { display: inline-flex; align-items: center; gap: 4px; }
+/* The "⋯" button's wrapper, as tall as the button. */
+.ws-more { display: flex; }
+.ws-more > .ws-tool > .tool-label,
+.ws-row:not(.selected) .ws-tool > .tool-label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.row.tight .gs-btn { width: 24px; padding: 0; justify-content: center; }
+.row.tight .gs-btn > .tool-label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+/* The "Más" menu opens 6px under the row's actions (its containing block), at their right end, above
+   the rows that follow. It lists the row's actions that did not fit, then a workspace's rename and remove. */
+.ws-more-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  display: grid;
+  min-width: 180px;
+  padding: 6px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-pop);
+}
+.ws-more-menu[hidden] { display: none; }
+/* The state menu spans the head, 10px in from each side (the design's .state-menu). */
+.state-menu { top: calc(100% - 2px); left: 10px; right: 10px; min-width: 0; }
+.ws-more-item[aria-disabled="true"] { opacity: 0.6; cursor: not-allowed; }
+.ws-more-item { display: flex; align-items: center; gap: 10px; min-height: 30px; padding: 0 10px; border: 0; border-radius: var(--radius-sm); background: none; text-align: left; white-space: nowrap; cursor: pointer; }
+.ws-more-item:hover, .ws-more-item:focus-visible { background: var(--hover); }
+.ws-more-item > svg.icon { --icon: var(--icon-md); color: var(--ink-2); }
+.ws-more-item[data-tool="remove"] svg.icon { color: var(--danger); }
+/* gentle-shell's rose keeps its color on the row and in "Más", where it outranks the item's ink. */
+svg.icon.gs-rose { color: var(--rose); }
+/* gentle-shell answers like a button in its rose: hovered, a rose tint and rule; pressed, a deeper
+   tint and the button sinks a little. The selectors outrank the selected row's paper pill
+   (`.row.selected .row-actions > .btn:first-child`), which otherwise kept it still under the pointer. */
+.row .row-actions > .btn.gs-btn:hover { background: color-mix(in srgb, var(--rose) 14%, var(--paper)); border-color: var(--rose); }
+.row .row-actions > .btn.gs-btn:active { background: color-mix(in srgb, var(--rose) 26%, var(--paper)); border-color: var(--rose); }
+@media (prefers-reduced-motion: no-preference) {
+  .row .row-actions > .btn.gs-btn { transition: background 0.12s ease, border-color 0.12s ease, transform 0.08s ease; }
+  .row .row-actions > .btn.gs-btn:active { transform: scale(0.94); }
+}
+/* The agents' ▾: a small button glued to the agent button, a
+   split button with it, whose menu opens under them at the actions' right end, like "Más". It goes with that
+   button (fitRow) and has no motion of its own. On the selected row it is a paper pill too. */
+.agent-combo { display: flex; }
+.row-actions .btn.agent-pick { width: 18px; padding: 0; justify-content: center; margin-left: -1px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.row-actions > .gs-btn:has(+ .agent-combo) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.btn.agent-pick > svg.icon { --icon: var(--icon-sm); }
+.row.selected .row-actions > .agent-combo > .btn { background: var(--paper); border-color: var(--rule); }
+/* An item without an icon (rename) keeps its text in line with the others. */
+.ws-more-item > .tool-label:first-child { padding-left: calc(var(--icon-md) + 10px); }
+.row input.rename {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-weight: 400;
+}
+.row input.rename[aria-invalid="true"] { border-color: var(--danger); }
+.rename-error { padding: 2px 8px 4px 30px; }
+
+/* Folder picker dialog */
+.picker { list-style: none; margin: 0; padding: 4px; max-height: 50vh; overflow: auto; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); }
+.picker li { display: flex; align-items: center; gap: 8px; padding: 3px 6px; border-radius: 4px; }
+.picker li:hover { background: var(--surface-2); }
+.picker label { flex: 1; cursor: pointer; font-family: var(--font-mono); font-size: var(--fs-sm); }
+
+
+/* Several folders at once: checkboxes in selection mode and the bar under the workspace row. */
+.row .pick { display: none; flex: none; margin: 0 2px 0 0; accent-color: var(--accent); cursor: pointer; }
+.ws.picking .row .pick { display: inline-block; }
+.pick-bar { display: grid; gap: 4px; margin: 2px 8px 4px 22px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); }
+.pick-bar[hidden] { display: none; }
+.pick-bar p { margin: 0; }
+.pick-hint { font-size: var(--fs-sm); }
+.pick-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.pick-actions .btn { min-height: 24px; padding: 0 9px; font-size: var(--fs-sm); }
+.pick-actions .btn[hidden] { display: none; }
+.pick-note:empty { display: none; }
+.pick-list { margin: 0; padding-left: 18px; font-size: var(--fs-sm); }
+.pick-list li + li { margin-top: 2px; }
+.pick-actions .btn:disabled:not([aria-busy]) { cursor: not-allowed; }
+
+/* "Delegar a Sereno": the instruction field, its count and warning, and the autopilot box. */
+.delegate-dialog textarea {
+  min-height: 84px;
+  resize: vertical;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: var(--fs-ui);
+}
+.delegate-dialog textarea[aria-invalid="true"] { border-color: var(--danger); }
+.delegate-count.over { color: var(--danger); }
+.delegate-warn { color: var(--warn); font-size: var(--fs-sm); }
+.delegate-warn:empty { display: none; }
+/* Mirador's proposal from memory and "Mejorar con IA": a line above the field. */
+.proposal-bar { display: grid; gap: 4px; }
+.delegate-proposal { margin: 0; color: var(--accent); }
+.delegate-proposal:empty { display: none; }
+/* "Mejorar con IA", also in the bedtime proposals (night.css places it there). */
+.improve { display: grid; gap: 4px; }
+.improve-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.improve-bar .hint { margin: 0; }
+.improve-btn { min-height: 28px; }
+.improve-btn[aria-busy="true"] { cursor: progress; }
+.improve-status { margin: 0; font-size: var(--fs-sm); color: var(--muted); }
+.improve-status.error { color: var(--danger); }
+.improve-status:empty { display: none; }
+.improve-suggestion { display: grid; gap: 4px; padding: 6px 8px; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 6px; }
+.improve-suggestion[hidden] { display: none; }
+.improve-suggestion .hint { margin: 0; }
+.improve-suggestion-text { margin: 0; white-space: pre-wrap; max-height: 12em; overflow: auto; }
+.improve-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.delegate-auto { display: grid; grid-template-columns: auto 1fr; gap: 2px 6px; align-items: center; }
+.delegate-auto input { margin: 0; accent-color: var(--accent); }
+.delegate-auto .hint { grid-column: 2; }
+.delegate-auto .hint[hidden] { display: none; }
+/* "Cómo funciona": the static hint, folded under the form. */
+.delegate-how > summary { display: flex; align-items: center; gap: 6px; min-height: 28px; list-style: none; cursor: pointer; color: var(--muted); font-size: var(--fs-sm); border-radius: var(--radius-sm); }
+.delegate-how > summary::-webkit-details-marker { display: none; }
+.delegate-how > summary:hover { color: var(--ink); }
+.delegate-how > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.delegate-how[open] > summary .delegate-caret { transform: rotate(90deg); }
+.delegate-how > .hint { margin: 2px 0 0 18px; }
+@media (prefers-reduced-motion: no-preference) {
+  .delegate-caret { transition: transform 0.15s ease; }
+}

@@ -1,0 +1,7 @@
+{
+  "workspaces": [
+    { "id": "code", "name": "Code", "root": "/home/you/code", "folders": [], "expanded": [] }
+  ],
+  "agentCommand": "bash",
+  "mode": "auto"
+}

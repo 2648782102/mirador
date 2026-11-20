@@ -1,0 +1,92 @@
+#!/usr/bin/env node
+// Mirador's Claude Code hook. Mirador starts claude with
+// `--settings <runtime>/mirador/herdr/claude-settings.json` (src/attention/claude-hooks.ts), whose
+// hooks run this script with the event's JSON on stdin. It reports the agent's attention state as the
+// gentle-shell bridge does, as one herdr report-metadata line to $HERDR_SOCKET_PATH for pane
+// $HERDR_PANE_ID, from source mirador:attention:
+//   UserPromptSubmit, PostToolUse  working   clears blocked, prompt and finished
+//   Notification                   waiting   prompt=<its message>; idle reminders and other notices change nothing
+//   Stop                           finished  finished=<turn id>
+// Each report also carries session=<session_id>, which Mirador records to resume with `--resume <id>`.
+// Like bin/herdr-shim it must never get in the agent's way: it prints nothing, always exits 0 and
+// gives up after one second.
+import { createConnection } from 'node:net';
+
+const MAX_INPUT_BYTES = 256 * 1024;
+const MAX_LINE_BYTES = 4096;
+/** Mirador refuses a token value over 512 characters, so the message is cut before that. */
+const MAX_MESSAGE = 500;
+const TIMEOUT_MS = 1000;
+const SOURCE = 'mirador:attention';
+const PANE = /^[\w-]{1,64}$/;
+/** As SESSION_ID in src/agents/catalog.ts: a letter or digit first, so never an option. */
+const SESSION_ID = /^[A-Za-z0-9][\w-]{0,127}$/;
+/** Notifications that wait for an answer (https://code.claude.com/docs/en/hooks#notification). */
+const WAITING = new Set(['permission_prompt', 'elicitation_dialog', 'elicitation_url_dialog', 'agent_needs_input']);
+const DEFAULT_PROMPT = 'Claude Code needs your input';
+
+/** The tokens and cleared tokens `input` reports, or null when it reports nothing. */
+function reportOf(input, seq) {
+  let event;
+  try {
+    event = JSON.parse(input);
+  } catch {
+    return null;
+  }
+  if (typeof event !== 'object' || event === null || Array.isArray(event)) return null;
+  const session = typeof event.session_id === 'string' && SESSION_ID.test(event.session_id) ? { session: event.session_id } : {};
+  switch (event.hook_event_name) {
+    case 'UserPromptSubmit':
+    case 'PostToolUse':
+      return { tokens: session, clear: ['blocked', 'prompt', 'finished'] };
+    case 'Notification': {
+      // Older versions send no type: count it as waiting.
+      if (event.notification_type !== undefined && !WAITING.has(event.notification_type)) return null;
+      const message = typeof event.message === 'string' ? event.message.replace(/\s+/g, ' ').trim().slice(0, MAX_MESSAGE) : '';
+      return { tokens: { ...session, prompt: message || DEFAULT_PROMPT }, clear: ['blocked', 'finished'] };
+    }
+    case 'Stop':
+      return { tokens: { ...session, finished: String(seq) }, clear: ['blocked', 'prompt'] };
+    default:
+      return null;
+  }
+}
+
+function send(socket, line) {
+  const conn = createConnection(socket);
+  const timer = setTimeout(() => conn.destroy(), TIMEOUT_MS);
+  conn.on('error', () => {});
+  conn.on('close', () => clearTimeout(timer));
+  conn.on('connect', () => conn.end(line));
+}
+
+function main() {
+  const pane = process.env.HERDR_PANE_ID;
+  const socket = process.env.HERDR_SOCKET_PATH;
+  if (!pane || !PANE.test(pane) || !socket) return;
+  setTimeout(() => process.exit(0), TIMEOUT_MS).unref();
+  let input = '';
+  let size = 0;
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('error', () => {});
+  process.stdin.on('data', (chunk) => {
+    size += Buffer.byteLength(chunk);
+    if (size > MAX_INPUT_BYTES) return process.stdin.destroy();
+    input += chunk;
+  });
+  process.stdin.on('end', () => {
+    // Numbered from the clock, as the bridge's reports are; one hook at a time keeps them in order.
+    const seq = Date.now();
+    const report = reportOf(input, seq);
+    if (!report) return;
+    const line = JSON.stringify({ v: 1, cmd: 'report-metadata', pane, source: SOURCE, seq, ttlMs: null, ...report }) + '\n';
+    if (Buffer.byteLength(line) <= MAX_LINE_BYTES) send(socket, line);
+  });
+}
+
+try {
+  main();
+} catch {
+  // Best effort only: a report that cannot be sent is dropped.
+}
+process.exitCode = 0;

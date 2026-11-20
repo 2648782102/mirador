@@ -1,0 +1,41 @@
+/* Sleeping agents (public/features/sleeping.js): the "Dormidos (N)" entry ending each workspace
+   group in Desarrollo, its dialog, and the dock group in Seguimiento. Dimmed: they run nothing. */
+
+/* The entry: a quiet chip after the group's tabs, or after its header above the grid. */
+.sleep-entry {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: center;
+  margin: 0 0 4px 4px;
+  padding: 1px 8px;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.sleep-entry:hover { border-color: var(--accent); color: var(--text); }
+.sleep-entry:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pane-group-head .sleep-entry { margin: 0 0 0 6px; }
+
+/* The dialog: one row per sleeping agent, its actions at the end. */
+.sleep-dialog { width: min(560px, calc(100vw - 32px)); }
+.sleep-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 50vh; overflow: auto; }
+.sleep-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 6px 8px; border: 1px dashed var(--border); border-radius: 8px; }
+.sleep-name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.sleep-entry > svg.icon, .sleep-name > svg.icon { --icon: var(--icon-sm); }
+.sleep-name > svg.icon { margin-right: 4px; color: var(--sleep); }
+.sleep-fresh { font-size: var(--fs-sm); }
+.sleep-actions { display: flex; gap: 6px; margin-left: auto; }
+.sleep-actions .btn { min-height: 32px; padding: 4px 12px; }
+
+/* Seguimiento's dock: the reason and "Despertar todos" above the sleeping cards. */
+.tracking-sleep-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0 0 6px; }
+.tracking-sleep-head .tracking-note { flex: 1 1 200px; margin: 0; }
+.tracking-sleep-head .btn { min-height: 32px; padding: 4px 12px; }
+.tracking-card.sleeping { opacity: 0.85; }

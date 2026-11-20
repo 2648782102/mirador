@@ -1,0 +1,26 @@
+import { offeredAgents } from '../../agents/catalog.ts';
+import { resolveMode } from '../../mode.ts';
+import type { RouteModule } from '../context.ts';
+import { sendJson } from '../respond.ts';
+
+/** `env` is what `auto` mode looks at (GENTLE_AI_HOME/HOME and PATH); tests pass a scratch one. */
+export function createConfigRoutes(options: { env?: NodeJS.ProcessEnv } = {}): RouteModule {
+  const env = options.env ?? process.env;
+  return (ctx) => [
+    {
+      // `mode` is resolved per request: the UI hides the gentle extras in plain.
+      method: 'GET',
+      path: '/api/config',
+      handler: async ({ res }) =>
+        sendJson(res, 200, { agentCommand: ctx.config.agentCommand, timeZone: ctx.config.timeZone, today: ctx.today(), mode: await resolveMode(ctx.config.mode, env) }),
+    },
+    {
+      // The agents a folder can open, read from gentle-ai's state and PATH per request.
+      method: 'GET',
+      path: '/api/agents',
+      handler: async ({ res }) => sendJson(res, 200, { agents: await offeredAgents({ agentCommand: ctx.config.agentCommand }) }),
+    },
+  ];
+}
+
+export const configRoutes: RouteModule = createConfigRoutes();

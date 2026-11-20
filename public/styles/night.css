@@ -1,0 +1,341 @@
+/* Night shift in the tracking view (public/features/night.js): its part of the strip,
+   the "What gentle-deck did" lane (lane frame in styles/tracking.css) and its dialogs. Its on/off
+   switch is in the topbar's settings sheet (styles/settings.css). */
+.night-strip {
+  /* Shrinks within the strip's line (its state line gives way) before it wraps below. */
+  flex: 1 1 520px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding-left: 16px;
+  border-left: 1px solid var(--border);
+  min-width: 0;
+}
+.night-strip p { margin: 0; font-size: var(--fs-sm); }
+/* The state line gives way first; its title keeps the whole text. */
+.night-strip #night-state { flex: 1 1 60px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.night-strip #night-state.night-unavailable,
+.night-strip #night-state.tracking-error { white-space: normal; }
+/* "Piloto automático" after Sereno's owl (features/night.js serenoIcon), at the medium size so it reads as an owl. */
+.night-strip-label > svg.sereno-ic { --icon: var(--icon-md); }
+.night-strip-label { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: var(--fs-sm); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); white-space: nowrap; }
+.night-strip-budget { display: grid; gap: 2px; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.night-strip-budget meter { width: 120px; }
+.night-strip-budget.warn > span { color: var(--warn); }
+.night-strip-budget.danger > span { color: var(--danger); }
+.night-strip-error { flex-basis: 100%; }
+/* The night queue: how many work of N; the count of those waiting is not only a color. */
+.night-strip .night-queue-line { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.night-strip .night-queue-line.waiting { color: var(--warn); }
+
+/* The «Responder desde Telegram» switch: a button with role="switch"; its label says what it turns on. */
+.night-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 2px 10px 2px 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  cursor: pointer;
+}
+.night-switch:hover:not(:disabled) { border-color: var(--accent); }
+.night-switch:disabled { opacity: 0.6; cursor: not-allowed; }
+.night-switch[aria-busy="true"] { cursor: progress; }
+.night-switch-track {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  flex: none;
+}
+.night-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: left 0.15s ease;
+}
+.night-switch.on { border-color: var(--accent); background: var(--accent-soft); }
+.night-switch.on .night-switch-track { border-color: var(--accent); }
+.night-switch.on .night-switch-thumb { left: 16px; background: var(--accent); }
+@media (prefers-reduced-motion: reduce) {
+  .night-switch-thumb { transition: none; }
+}
+.night-on { color: var(--accent); }
+.night-unavailable { color: var(--warn); }
+
+.night-part { min-width: 0; }
+.night-part h3 { margin: 0 0 6px; font-size: var(--fs-ui); display: flex; align-items: center; gap: 8px; }
+.night-part > .tracking-small { margin: 0 0 8px; }
+.night-count {
+  font-size: var(--fs-sm);
+  color: var(--warn);
+  border: 1px solid var(--warn);
+  border-radius: 8px;
+  padding: 0 6px;
+  font-variant-numeric: tabular-nums;
+}
+.night-group + .night-group { margin-top: 10px; }
+.night-group h4 { margin: 0 0 4px; font-size: var(--fs-sm); font-weight: 400; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+
+/* "What Mirador did": a filter row between the lane head and the list, then the
+   rows grouped by type under a sub-heading with its count. */
+.night-lane { grid-template-rows: auto auto minmax(0, 1fr); }
+.night-filter { flex-wrap: wrap; margin: 8px 10px 0; }
+.night-filter[hidden] { display: none; }
+.night-filter .btn { display: inline-flex; align-items: baseline; gap: 6px; }
+.night-filter-count { font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
+.night-report-group { display: flex; align-items: center; gap: 8px; }
+
+.night-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.night-item {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+.night-item p { margin: 0; overflow-wrap: anywhere; }
+.night-item > .btn { justify-self: start; }
+.night-item-head { display: flex; align-items: baseline; gap: 4px 8px; min-width: 0; font-size: var(--fs-sm); }
+.night-place { color: var(--muted); overflow-wrap: anywhere; }
+.night-time { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.night-tag,
+.night-verdict {
+  flex: none;
+  font-size: var(--fs-sm);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 6px;
+}
+.night-verdict.ok { color: var(--ok); border-color: var(--ok); }
+.night-verdict.warn { color: var(--warn); border-color: var(--warn); }
+.night-verdict.danger { color: var(--danger); border-color: var(--danger); }
+.night-summary { font-weight: 600; }
+.night-reason { color: var(--muted); }
+.night-reason code,
+.night-left code { margin-left: 6px; }
+.night-left { color: var(--warn); }
+.night-warn { color: var(--warn); }
+.night-judge { font-style: italic; }
+.night-message {
+  margin: 2px 0 0;
+  padding: 4px 8px;
+  border-left: 2px solid var(--accent);
+  background: var(--surface);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 9em;
+  overflow: auto;
+}
+.night-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+.night-actions .btn { min-height: 32px; padding: 4px 12px; }
+
+.night-stats { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: var(--fs-sm); color: var(--muted); }
+.night-stats strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.night-stats [data-key="wrong"] strong { color: var(--danger); }
+.night-stats [data-key="doubtful"] strong { color: var(--warn); }
+
+/* Room for one line from the first render: a confirmation never moves the list. */
+.night-notice { margin: 0; min-height: 1.45em; color: var(--ok); }
+.night-notice.error { color: var(--danger); }
+
+.night-list { margin: 0; padding-left: 20px; display: grid; gap: 2px; }
+
+.night-help { max-width: 72ch; }
+.night-telegram .hint { margin: 0; max-width: 72ch; }
+.night-telegram-form { display: grid; gap: 12px; max-width: 460px; }
+.night-telegram-form .field p { margin: 0; }
+
+.night-note {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  resize: vertical;
+}
+.night-dialog { width: min(560px, calc(100vw - 32px)); }
+/* "Before bed" and the shift settings: the body scrolls, the × stays in view at the top. */
+.night-sheet { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 32px); }
+.night-sheet[open] { display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.night-sheet .dialog-body { min-height: 0; overflow: auto; padding-right: 4px; scrollbar-width: thin; scrollbar-color: var(--muted) var(--bg); }
+
+/* Bedtime banner, "Before bed" with execution notes, and the schedule form. */
+.night-banner-slot:empty { display: none; }
+.night-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+.night-banner p { margin: 0; max-width: 75ch; }
+.night-bedtime-list { display: grid; gap: 12px; }
+.night-state-blocked,
+.night-state-prompt { color: var(--warn); border-color: var(--warn); }
+.night-state-error { color: var(--danger); border-color: var(--danger); }
+.night-state-finished { color: var(--ok); border-color: var(--ok); }
+.night-draft { display: grid; gap: 4px; margin-top: 4px; }
+.night-draft p { margin: 0; }
+.night-draft > .btn { justify-self: start; }
+.night-draft textarea[aria-invalid="true"] { border-color: var(--danger); }
+.night-note-list { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 6px; }
+.night-note-item {
+  display: grid;
+  gap: 2px;
+  padding: 6px 8px;
+  border-left: 2px solid var(--accent);
+  background: var(--surface);
+}
+.night-note-item p { margin: 0; }
+.night-note-item > .btn { justify-self: start; }
+.night-note-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.night-note-state { font-size: var(--fs-sm); color: var(--muted); }
+.night-note-state.ok { color: var(--ok); }
+.night-note-queue { font-size: var(--fs-sm); color: var(--warn); }
+.night-queue-form { display: grid; gap: 12px; max-width: 460px; }
+.night-queue-form .field p { margin: 0; }
+.night-queue-form input { width: 120px; }
+.night-queue-form input[aria-invalid="true"] { border-color: var(--danger); }
+
+.night-schedule-form { display: grid; gap: 12px; max-width: 460px; }
+.night-schedule-form .field p { margin: 0; }
+.night-check { display: flex; align-items: center; gap: 8px; }
+.night-days { border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 10px 8px; margin: 0; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.night-days legend { padding: 0 4px; }
+.night-days .field-error { flex-basis: 100%; margin: 0; }
+.night-day { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; }
+.night-times { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
+.night-times input { width: 100%; }
+.night-times .field { align-content: start; }
+.night-schedule-form input[aria-invalid="true"] { border-color: var(--danger); }
+
+/* Resource profile and the Claude budget meter. */
+.night-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.night-schedule,
+.night-queue,
+.night-profile,
+.night-telegram { border-top: 1px solid var(--border); padding-top: 10px; }
+.night-profile-choices { border: 0; padding: 0; margin: 0 0 8px; display: grid; gap: 4px; }
+.night-profile-choice { display: flex; align-items: baseline; gap: 6px; min-height: 28px; }
+.night-profile-table { border-collapse: collapse; font-size: var(--fs-sm); margin: 0 0 8px; width: 100%; max-width: 640px; }
+.night-profile-table th, .night-profile-table td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; vertical-align: top; }
+.night-profile-table thead th { color: var(--muted); font-weight: 400; }
+.night-profile-table .selected { background: var(--accent-soft); color: var(--text); }
+.night-profile-table tr.overridden td { color: var(--muted); text-decoration: line-through; }
+.night-profile-override { display: block; color: var(--warn); font-weight: 400; }
+.night-budget { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-width: 460px; font-size: var(--fs-sm); }
+.night-budget-row { display: grid; grid-template-columns: minmax(0, 1fr) 120px; align-items: center; gap: 4px 8px; }
+.night-budget-row meter { width: 120px; }
+.night-budget-row.warn > span:first-child { color: var(--warn); }
+.night-budget-row.danger > span:first-child { color: var(--danger); }
+.night-budget-out { grid-column: 1 / -1; color: var(--danger); }
+
+/* Autopilot: "Until when?" when turning it on by hand. */
+.night-until { border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 10px 8px; margin: 0; display: grid; gap: 6px; }
+.night-until legend { padding: 0 4px; }
+.night-until input[type="time"] { margin-left: 4px; }
+.night-until input[aria-invalid="true"] { border-color: var(--danger); }
+.night-until .hint,
+.night-until .field-error { margin: 0; }
+
+/* "Antes de dormir", one note per agent: each agent is a folded row
+   (state chip, path, status), the ⓘ next to the tabs holds the intro, the capacity and the tabs'
+   explanation, and the notes of closed agents fold to one line each. Rows were .night-item's padding. */
+.night-fold > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 4px 8px; min-width: 0; border-radius: var(--radius-sm); }
+.night-fold > summary::-webkit-details-marker { display: none; }
+.night-fold > summary > svg.icon { --icon: var(--icon-sm); flex: none; color: var(--muted); }
+.night-fold[open] > summary > svg.icon { transform: rotate(90deg); }
+@media (prefers-reduced-motion: no-preference) {
+  .night-fold > summary > svg.icon { transition: transform 0.15s ease; }
+}
+.night-item:has(> .night-agent) { padding: 0; }
+.night-agent > summary { padding: 8px 10px; font-size: var(--fs-sm); flex-wrap: wrap; }
+.night-agent > summary:hover { background: var(--surface); }
+.night-agent[open] { padding: 0 10px 10px; }
+.night-agent > :not(summary) { margin-top: 6px; }
+.night-agent[open] > summary { margin: 0 -10px; }
+.night-row-status { margin-left: auto; color: var(--muted); white-space: nowrap; }
+.night-row-status.proposal { color: var(--accent); }
+.night-row-status.noted { color: var(--ok); }
+.night-bedtime-tabs { flex-wrap: wrap; }
+.night-bedtime-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 4px 0 10px; }
+.night-about { position: relative; margin-left: auto; }
+.night-about > summary { padding: 2px 6px; color: var(--muted); }
+.night-about > summary > svg.icon { display: none; }
+.night-about > summary:hover,
+.night-about[open] > summary { color: var(--accent); }
+.night-about-mark { display: inline-grid; place-items: center; width: 18px; height: 18px; border: 1.5px solid currentColor; border-radius: 50%; font: italic 600 12px/1 Georgia, 'Times New Roman', serif; }
+/* The ⓘ opens like a tooltip under itself, over the rows, so the tabs never move. */
+.night-about-body {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 3;
+  width: min(60ch, calc(100vw - 96px));
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  box-shadow: var(--shadow-pop);
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.night-about-body p { margin: 0; }
+.night-about-body strong { color: var(--text); }
+.night-closed { margin-top: 8px; }
+.night-closed > summary { font-size: var(--fs-sm); color: var(--muted); width: fit-content; }
+.night-note-item:has(> .night-note-fold) { grid-template-columns: minmax(0, 1fr) auto; align-items: start; column-gap: 8px; }
+.night-note-item > .night-note-fold { min-width: 0; }
+.night-note-fold > :not(summary) { margin-top: 2px; }
+.night-note-line { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Open, the whole text follows the chevron; the first line stays only for screen readers. */
+.night-note-fold[open] > summary { float: left; margin-right: 4px; }
+.night-note-fold[open] .night-note-line { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.night-draft .night-warn:empty { display: none; }
+.night-proposal-source { display: grid; gap: 2px; }
+.night-proposal-source:empty { display: none; }
+
+/* Shift settings, folded: each part is a .night-fold whose summary holds
+   its title and its current value on one line; its "Cómo funciona" is a small muted fold inside it.
+   The read error and the save state follow the fold, so they show while it is closed. */
+.night-setting > summary { min-height: 32px; padding: 2px 0; }
+.night-setting > summary h3 { margin: 0; font-size: var(--fs-ui); white-space: nowrap; }
+.night-setting-value { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.night-setting > summary:hover .night-setting-value { color: var(--text); }
+.night-setting[open] > :not(summary) { margin-top: 10px; }
+.night-setting + .tracking-error { margin: 6px 0 0; }
+.night-how > summary,
+.night-profile-more > summary { width: fit-content; min-height: 28px; font-size: var(--fs-sm); color: var(--muted); }
+.night-how > summary:hover,
+.night-how[open] > summary,
+.night-profile-more > summary:hover { color: var(--text); }
+.night-how > :not(summary) { margin: 4px 0 0 20px; max-width: 72ch; }
+.night-how p { margin: 0; }
+.night-how > .night-list { padding-left: 20px; margin-left: 20px; }
+.night-profile-more > .night-profile-table { margin-top: 6px; }
+.night-profile-more > .hint { margin: 0; }
+
+/* "Qué hizo Mirador", decluttered: the row keeps one line of chips
+   (the place cut short, whole in its title) and its summary; the rest opens in a small fold. */
+.night-item-head .night-place { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.night-report-more > summary { width: fit-content; min-height: 24px; font-size: var(--fs-sm); color: var(--muted); }
+.night-report-more > summary:hover,
+.night-report-more[open] > summary { color: var(--text); }
+.night-report-more > :not(summary) { margin-top: 4px; }

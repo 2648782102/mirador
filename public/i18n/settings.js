@@ -1,0 +1,33 @@
+// The topbar's "Ajustes" sheet and night chip (public/features/settings.js). English and Spanish, same keys.
+export default {
+  en: {
+    'settings.label': 'Settings',
+    'settings.night': 'Autopilot',
+    'settings.nightHint': 'Sereno keeps watch while you’re away.',
+    'settings.switch.on': 'On',
+    'settings.switch.off': 'Off',
+    'settings.layout': 'Terminals',
+    'settings.theme': 'Theme',
+    'settings.theme.light': 'Light',
+    'settings.theme.dark': 'Dark',
+    'settings.theme.gentleman': 'Gentleman',
+    'settings.theme.gentlemanLabel': 'Gentleman Sexy',
+    'settings.language': 'Language',
+    'settings.help': 'Help',
+  },
+  es: {
+    'settings.label': 'Ajustes',
+    'settings.night': 'Piloto automático',
+    'settings.nightHint': 'Sereno cuida mientras no estás.',
+    'settings.switch.on': 'Encendido',
+    'settings.switch.off': 'Apagado',
+    'settings.layout': 'Terminales',
+    'settings.theme': 'Tema',
+    'settings.theme.light': 'Claro',
+    'settings.theme.dark': 'Oscuro',
+    'settings.theme.gentleman': 'Gentleman',
+    'settings.theme.gentlemanLabel': 'Gentleman Sexy',
+    'settings.language': 'Idioma',
+    'settings.help': 'Ayuda',
+  },
+};
