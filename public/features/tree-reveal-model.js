@@ -2,7 +2,32 @@
 // revealPlace): a tab click, or a click on a grid tile that makes a different terminal active, opens
 // that terminal's workspace and each folder down to its project, and collapses the other workspaces
 // and every open folder off that path. The reveal only changes what is shown; workspaces.js never
-// saves it. No DOM and no core.js: the browser and the tests import it.
+// saves it. The Ajustes switch "El árbol sigue a la terminal" turns the reveal off: its choice is
+// read and written through the core.js `prefs` the caller passes in. No DOM and no core.js: the
+// browser and the tests import it.
+
+/** The prefs key (localStorage `mirador.treeFollows`) of the Ajustes switch "El árbol sigue a la terminal". */
+export const TREE_FOLLOWS_PREF = 'treeFollows';
+
+/** Whether the reveal is on in `prefs` (core.js prefs): on by default; only a stored false turns it off. */
+export function readTreeFollows(prefs) {
+  return prefs.read(TREE_FOLLOWS_PREF, true) !== false;
+}
+
+/** Stores whether the reveal is on, through `prefs` (core.js prefs). */
+export function writeTreeFollows(prefs, on) {
+  prefs.write(TREE_FOLLOWS_PREF, on === true);
+}
+
+/**
+ * The place to reveal for terminal `info` ({ workspaceId, rel }, terminals.js) after a tab click or a
+ * press on another grid tile: its workspace and project folder ('' at the workspace root), or null
+ * when the terminal is gone or the Ajustes switch turned the reveal off in `prefs`.
+ */
+export function revealRequest(info, prefs) {
+  if (!info || !readTreeFollows(prefs)) return null;
+  return { workspaceId: info.workspaceId, rel: info.rel ?? '' };
+}
 
 /** The folder rels from the workspace root down to `rel`, outermost first: 'a/b' → ['a', 'a/b']; none for the root (''). */
 export function folderPath(rel) {

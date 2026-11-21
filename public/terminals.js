@@ -23,6 +23,7 @@ import { returningSizes } from '/terminal-size.js';
 import { paneStatus } from '/pane-status-model.js';
 import { showsAsTab } from '/terminal-kind-model.js';
 import { matches, normalizeSelection, paneToShow, showsTerminal } from '/features/state-filter-model.js';
+import { revealRequest } from '/features/tree-reveal-model.js';
 
 const terminals = new Map();
 const INPUT_CHUNK = 64 * 1024;
@@ -279,10 +280,11 @@ function tabKeys(event, id) {
  * Asks the sidebar to reveal terminal `id`'s place in its tree (features/workspaces.js revealPlace).
  * Only a click on its tab or a press on a grid tile that changes the active terminal asks for it;
  * activateTerminal never does, so a new terminal, a restore or a keyboard shortcut leave the tree be.
+ * With the Ajustes switch "El árbol sigue a la terminal" off (revealRequest), it asks for nothing.
  */
 function revealTerminal(id) {
-  const info = terminals.get(id)?.info;
-  if (info) emit('reveal', { workspaceId: info.workspaceId, rel: info.rel ?? '' });
+  const place = revealRequest(terminals.get(id)?.info, prefs);
+  if (place) emit('reveal', place);
 }
 
 /**

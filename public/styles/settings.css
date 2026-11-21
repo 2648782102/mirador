@@ -33,7 +33,7 @@
 /* Rendered from the start with a line reserved, so an error is announced when it appears (role=alert). */
 .settings-error { margin: 0; min-height: 1.45em; font-size: var(--fs-sm); color: var(--danger); }
 
-/* Switch: the only on/off setting; the others pick between named options. Its word says the state too. */
+/* Switch: an on/off setting; the other rows pick between named options. Its word says the state too. */
 .switch {
   display: inline-flex;
   align-items: center;

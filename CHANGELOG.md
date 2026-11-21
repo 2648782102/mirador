@@ -5,9 +5,11 @@ All notable changes to Mirador, written for the people who run it. The format fo
 
 ## Unreleased
 
+Planned for 0.2.0.
+
 ### Added
 
-- Clicking a terminal's tab, or a grid tile that makes another terminal active, opens its workspace and folders down to its project in the sidebar tree and collapses the rest, without changing the layout Mirador saves.
+- Clicking a terminal's tab, or a grid tile that makes another terminal active, opens its workspace and folders down to its project in the sidebar tree and collapses the rest, without changing the layout Mirador saves. It is on by default; turn it off with **El árbol sigue a la terminal / Tree follows the terminal** under **Ajustes / Settings**.
 
 ## [0.1.0] - 2026-11-20
 

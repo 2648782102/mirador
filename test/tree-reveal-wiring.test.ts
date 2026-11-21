@@ -29,8 +29,9 @@ test('S2 When: a tab click reveals the terminal\'s place, beside its activation'
   assert.match(mount, /onclick: \(\) => activateTerminal\(info\.id\) \}/);
   assert.match(mount, /\n  tab\.addEventListener\('click', \(\) => revealTerminal\(info\.id\)\);/);
   const reveal = fn(terminalsJs, 'revealTerminal');
-  assert.match(reveal, /const info = terminals\.get\(id\)\?\.info;/);
-  assert.match(reveal, /if \(info\) emit\('reveal', \{ workspaceId: info\.workspaceId, rel: info\.rel \?\? '' \}\);/);
+  // The place comes from revealRequest (tree-reveal-model.js), which also honours the Ajustes switch.
+  assert.match(reveal, /const place = revealRequest\(terminals\.get\(id\)\?\.info, prefs\);/);
+  assert.match(reveal, /if \(place\) emit\('reveal', place\);/);
 });
 
 test('S2 When / does not trigger: a tile press reveals only when its terminal was not the active one', () => {
