@@ -152,7 +152,7 @@ before(async () => {
   await mkdir(home(), { recursive: true });
   await mkdir(join(scratch, 'bin'), { recursive: true });
   await writeFile(join(scratch, 'bin', 'opencode'), FAKE_OPENCODE, { mode: 0o755 });
-  await writeFile(join(scratch, 'bin', 'gentle-shell'), '#!/bin/sh\nexec /usr/bin/sleep 600\n', { mode: 0o755 });
+  await writeFile(join(scratch, 'bin', 'gentle-shell'), '#!/bin/sh\nexec /bin/sleep 600\n', { mode: 0o755 });
   await mkdir(join(scratch, 'gentle-ai'), { recursive: true });
   await writeFile(join(scratch, 'gentle-ai', 'state.json'), JSON.stringify({ installed_agents: ['pi', 'opencode'] }));
   await mkdir(join(scratch, 'cfg', 'mirador'), { recursive: true });
