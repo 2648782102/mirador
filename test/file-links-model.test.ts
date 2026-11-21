@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 
 // Loaded by URL: the plain-JS model has no type declarations.
 const model = await import(new URL('../public/features/file-links-model.js', import.meta.url).href);
-const { fileChecker, findFileLinks, linkRange, splitPath } = model;
+const { fileChecker, findFileLinks, linkRange, openableFiles, splitPath } = model;
 
 // A terminal opened in the folder `web` of the workspace rooted at /home/u/Dev.
 const place = { root: '/home/u/Dev', rel: 'web', cwd: '/home/u/Dev/web' };
@@ -132,4 +132,18 @@ test('fileChecker lists each folder once, says which files exist, and lists agai
   clock = 1001;
   assert.equal(await exists('dev', 'web/src/new.ts'), true);
   assert.equal(calls.at(-1), 'dev:web/src');
+});
+
+test('openableFiles keeps the listed files the editor opens: not the ones over 1 MiB', () => {
+  const listing = {
+    files: [
+      { name: '.env', size: 4, dotenv: true, symlink: false, tooLarge: false },
+      { name: 'shared.ts', size: 9, dotenv: false, symlink: true, tooLarge: false },
+      { name: 'big.log', size: 1048577, dotenv: false, symlink: false, tooLarge: true },
+      { name: 'huge.log', size: 1048577, dotenv: false, symlink: true, tooLarge: true },
+    ],
+    truncated: false,
+  };
+  assert.deepEqual(openableFiles(listing), ['.env', 'shared.ts']);
+  assert.deepEqual(openableFiles({ files: [], truncated: false }), []);
 });

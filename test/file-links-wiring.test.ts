@@ -13,7 +13,7 @@ const js = readFileSync('public/terminals.js', 'utf8');
 const body = (name: string) => js.match(new RegExp(`\\n(?:export )?function ${name}\\([^)]*\\) \\{\\n([\\s\\S]*?)\\n\\}\\n`))?.[1] ?? '';
 
 test('the terminal reads paths with the pure model', () => {
-  assert.match(js, /\nimport \{ fileChecker, findFileLinks, linkRange, splitPath \} from '\/features\/file-links-model\.js';\n/);
+  assert.match(js, /\nimport \{ fileChecker, findFileLinks, linkRange, openableFiles, splitPath \} from '\/features\/file-links-model\.js';\n/);
 });
 
 test('connectTerminal keeps WebLinksAddon for http(s) and adds the file links', () => {
@@ -39,8 +39,8 @@ test('a path becomes a link only after the check that its file exists', () => {
   assert.doesNotMatch(provide.slice(0, provide.indexOf('fileExists(')), /callback\(found|callback\(links/);
 });
 
-test('the existence check lists the folder through the files API, cached', () => {
-  assert.match(js, /\nconst fileExists = fileChecker\(async \(ws, rel\) => \(await api\('GET', `\/api\/files\?\$\{new URLSearchParams\(\{ ws, rel \}\)\}`\)\)\.files\.map\(\(file\) => file\.name\)\);\n/);
+test('the existence check lists the folder through the files API, cached, keeping only the files the editor opens', () => {
+  assert.match(js, /\nconst fileExists = fileChecker\(async \(ws, rel\) => openableFiles\(await api\('GET', `\/api\/files\?\$\{new URLSearchParams\(\{ ws, rel \}\)\}`\)\)\);\n/);
 });
 
 test('activating a link emits files:open for the folder that holds the file', () => {

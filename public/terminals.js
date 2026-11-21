@@ -25,7 +25,7 @@ import { returningSizes } from '/terminal-size.js';
 import { paneStatus } from '/pane-status-model.js';
 import { showsAsTab } from '/terminal-kind-model.js';
 import { matches, normalizeSelection, paneToShow, showsTerminal } from '/features/state-filter-model.js';
-import { fileChecker, findFileLinks, linkRange, splitPath } from '/features/file-links-model.js';
+import { fileChecker, findFileLinks, linkRange, openableFiles, splitPath } from '/features/file-links-model.js';
 
 const terminals = new Map();
 const INPUT_CHUNK = 64 * 1024;
@@ -66,9 +66,10 @@ let shownId = null;
 // The offered agents (GET /api/agents, read by initTerminals): the configured agent's catalog id
 // and the chosen agents' labels, which the agent tabs show (tabAgent).
 let offeredAgents = [];
-// Whether a path in a terminal's output names a file: GET /api/files lists its folder, cached
-// (fileChecker), so hovering the same line again asks nothing new.
-const fileExists = fileChecker(async (ws, rel) => (await api('GET', `/api/files?${new URLSearchParams({ ws, rel })}`)).files.map((file) => file.name));
+// Whether a path in a terminal's output names a file the editor opens: GET /api/files lists its
+// folder (openableFiles drops what the editor refuses), cached (fileChecker), so hovering the same
+// line again asks nothing new.
+const fileExists = fileChecker(async (ws, rel) => openableFiles(await api('GET', `/api/files?${new URLSearchParams({ ws, rel })}`)));
 
 // ANSI colors stay the same in every theme: the terminal is a dark well (styles.css --well*).
 const XTERM_ANSI = {

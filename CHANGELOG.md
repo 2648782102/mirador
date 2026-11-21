@@ -5,10 +5,13 @@ All notable changes to Mirador, written for the people who run it. The format fo
 
 ## Unreleased
 
+Planned for 0.2.0.
+
 ### Added
 
 - A file path in a terminal's output that names a file of its workspace (absolute, `./x`, `../x` or `a/b.ts`, with
-  an optional `:line` or `:line:col`) is a link: a click opens the file in the file editor.
+  an optional `:line` or `:line:col`) is a link: a click opens the file in the file editor. Only files the editor
+  opens are links: not a symlink whose target leaves the workspace, nor a file over 1 MiB.
 
 ## [0.1.0] - 2026-11-20
 

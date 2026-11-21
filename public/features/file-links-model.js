@@ -117,6 +117,18 @@ export function linkRange(cells, start, end) {
 }
 
 /**
+ * The names in a GET /api/files listing (src/files/folder-files.ts listFiles) that the file editor
+ * opens, the only ones a terminal links. The listing already leaves out what the editor refuses
+ * by kind: folders, `.git`, sockets and FIFOs, dangling symlinks, symlinks to a folder and symlinks
+ * whose target leaves the workspace root. A file over 1 MiB (`tooLarge`, also through a symlink) is
+ * listed but the editor refuses it, so it is dropped here. Binary and non-UTF-8 files cannot be
+ * told apart in the listing: they stay, and the editor shows why it refuses one.
+ */
+export function openableFiles(listing) {
+  return (listing?.files ?? []).filter((file) => !file.tooLarge).map((file) => file.name);
+}
+
+/**
  * `exists(ws, path)` → Promise<boolean>: whether `path` (relative to the root of workspace `ws`)
  * names a file. `listFolder(ws, rel)` resolves to the names of the files in folder `rel`; each
  * folder is listed once per `ttl` ms, so hovering over and over asks nothing new. A failed listing
