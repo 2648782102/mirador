@@ -148,6 +148,17 @@ test('the config file it reads is named, and its mode is the one resolved', asyn
   assert.match(stdout, /^Mode: plain \(config: plain\)$/m);
 });
 
+test('a saved shell that is not bash is reported here too, because doctor is where a failed start is diagnosed (#10)', async () => {
+  const bin = await binDir('bin-shell', ['google-chrome-stable', 'gentle-shell']);
+  const env = await scratchEnv('shell', bin, closedPort);
+  await mkdir(join(env.XDG_CONFIG_HOME!, 'mirador'), { recursive: true });
+  const file = join(env.XDG_CONFIG_HOME!, 'mirador', 'config.json');
+  await writeFile(file, JSON.stringify({ shell: '/bin/zsh' }));
+  const { code, stdout } = await runDoctor(env);
+  assert.equal(code, 0, stdout);
+  assert.match(stdout, /^ {2}problem: shell is not bash, so agent terminals cannot start \(they run `bash --rcfile`\); other terminals are unaffected$/m);
+});
+
 test('an old Node or a node-pty that does not load is a missing requirement', async () => {
   const bin = await binDir('bin-inproc', ['chromium']);
   const env = await scratchEnv('inproc', bin, closedPort);

@@ -156,3 +156,20 @@ test('idleSleepHours (R5b idle sleep) defaults to 4, takes 0 (off) up to 168, an
     assert.deepEqual(config.launchProblems, ['idleSleepHours must be a number of hours from 0 (off) to 168; the default (4) applies']);
   }
 });
+
+test('a saved shell that is not bash is reported but kept, so plain terminals still use it (#10)', async () => {
+  const zsh = await loadConfig(await configFile('shell-zsh', { shell: '/bin/zsh' }), { HOME: home });
+  assert.equal(zsh.shell, '/bin/zsh', 'the value is not replaced');
+  assert.deepEqual(zsh.launchProblems, [
+    'shell is not bash, so agent terminals cannot start (they run `bash --rcfile`); other terminals are unaffected',
+  ]);
+
+  for (const shell of ['/bin/bash', '/usr/local/bin/bash', 'bash', 'C:\\Program Files\\Git\\bin\\bash.exe']) {
+    const ok = await loadConfig(await configFile(`shell-ok-${shell.replace(/\W+/g, '-')}`, { shell }), { HOME: home });
+    assert.equal(ok.shell, shell);
+    assert.deepEqual(ok.launchProblems, [], shell);
+  }
+
+  const none = await loadConfig(await configFile('shell-none', { port: 5000 }), { HOME: home });
+  assert.deepEqual(none.launchProblems, []);
+});

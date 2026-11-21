@@ -151,6 +151,19 @@ function savedOwnerName(value: unknown): { ownerName?: string; problems: string[
   return { problems: [`ownerName must be a name of 1 to ${MAX_OWNER_NAME} characters on one line, without < or >; "${DEFAULT_OWNER_NAME}" applies`] };
 }
 
+/**
+ * Why a saved `shell` cannot start agent terminals. They run
+ * `bash --rcfile <agent.bashrc> -i`, so a shell that is not bash breaks only the agent
+ * terminal, while every other terminal kind (plain shells, the git window) still works.
+ * The value is therefore kept and only reported, so a user who set `zsh` on purpose keeps
+ * their plain terminals.
+ */
+function shellProblems(value: unknown): string[] {
+  if (value === undefined || value === null) return [];
+  if (typeof value === 'string' && /(^|[/\\])bash(\.exe)?$/.test(value.trim())) return [];
+  return ['shell is not bash, so agent terminals cannot start (they run `bash --rcfile`); other terminals are unaffected'];
+}
+
 /** The config as loaded, plus what Mirador could not read in its `workspaces`. */
 export interface LoadedConfig extends MiradorConfig {
   /**
@@ -260,6 +273,7 @@ export async function loadConfig(path = configPath(), env = process.env): Promis
   const mode = savedMode(rest.mode);
   const browser = savedBrowser(browserValue);
   const owner = savedOwnerName(ownerValue);
+  const shellIssue = shellProblems(rest.shell);
   // Only an explicit false turns the attention bridge off.
   return {
     ...base,
@@ -272,7 +286,14 @@ export async function loadConfig(path = configPath(), env = process.env): Promis
     ...(browser.browser ? { browser: browser.browser } : {}),
     ...(owner.ownerName ? { ownerName: owner.ownerName } : {}),
     workspaceProblems: loaded.problems,
-    launchProblems: [...launches.problems, ...idleSleep.problems, ...mode.problems, ...browser.problems, ...owner.problems],
+    launchProblems: [
+      ...launches.problems,
+      ...idleSleep.problems,
+      ...mode.problems,
+      ...browser.problems,
+      ...owner.problems,
+      ...shellIssue,
+    ],
   };
 }
 
