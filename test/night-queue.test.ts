@@ -82,6 +82,8 @@ function fakeAttention() {
 interface Setup {
   slots?: number;
   claimMs?: number;
+  /** The service's timers (NightServiceOptions.setTimer); real ones when absent. */
+  setTimer?: (fn: () => void, ms: number) => () => void;
 }
 
 async function setup(options: Setup = {}) {
@@ -117,6 +119,7 @@ async function setup(options: Setup = {}) {
     deliveryTimeoutMs: 30,
     autoDelayMs: DELAY,
     sweepIntervalMs: 5,
+    ...(options.setTimer ? { setTimer: options.setTimer } : {}),
     queue: {
       limit: () => ({ slots: limits.slots, suggested: 5, custom: true, memTotal: memory.memTotal }),
       readMemory: async () => ({ ...memory }),
@@ -156,6 +159,48 @@ async function until(check: () => boolean | Promise<boolean>, ms = 2000): Promis
   }
 }
 const items = (s: Awaited<ReturnType<typeof setup>>) => s.queue()?.items.map((item) => [item.terminalId, item.kind]);
+
+/**
+ * The service's timers, where each one of `held` ms (the claim time) waits for `run()` before its time starts
+ * to count; every other timer is a real one at once. A held claim cannot end while the test still looks at
+ * the queue, so no wait depends on catching the short moment before it ends (issue #30).
+ */
+function holdTimers(held: number) {
+  const waiting = new Set<{ fn: () => void; cancelled: boolean; timer?: ReturnType<typeof setTimeout> }>();
+  const real = (fn: () => void, ms: number) => {
+    const timer = setTimeout(fn, ms);
+    timer.unref?.();
+    return timer;
+  };
+  return {
+    setTimer(fn: () => void, ms: number): () => void {
+      if (ms !== held) {
+        const timer = real(fn, ms);
+        return () => clearTimeout(timer);
+      }
+      const entry: { fn: () => void; cancelled: boolean; timer?: ReturnType<typeof setTimeout> } = { fn, cancelled: false };
+      waiting.add(entry);
+      return () => {
+        entry.cancelled = true;
+        waiting.delete(entry);
+        if (entry.timer) clearTimeout(entry.timer);
+      };
+    },
+    /** Held timers not run yet and not cancelled. */
+    held: () => [...waiting].filter((entry) => !entry.timer).length,
+    /** Starts every held timer: each one fires `held` ms from now, unless it is cancelled first. */
+    run(onFire: () => void = () => {}): void {
+      for (const entry of waiting) {
+        entry.timer ??= real(() => {
+          waiting.delete(entry);
+          if (entry.cancelled) return;
+          onFire();
+          entry.fn();
+        }, held);
+      }
+    },
+  };
+}
 
 test('N default: max(1, floor(MemTotal GiB / 4.5)), 5 on a 24 GB machine; capped at 50; unknown memory falls back', () => {
   assert.equal(suggestedSlots(23_935 * 1024 ** 2), 5, "the user's 24 GB machine (MemTotal 23935 MiB)");
@@ -471,17 +516,27 @@ test('orderings: N lowered while full starts nothing until fewer than N work', a
 });
 
 test('a start the agent never picks up frees its slot after the claim time', async () => {
-  const s = await setup({ slots: 1, claimMs: 60 });
+  const claimMs = 60;
+  const timers = holdTimers(claimMs);
+  const s = await setup({ slots: 1, claimMs, setTimer: timers.setTimer });
   try {
     const b = s.agent('b', 'finished');
     const c = s.agent('c', 'finished');
     await s.note(b, 'For B.');
     await s.note(c, 'For C.');
     s.service.setActive(true);
-    await until(() => s.received(b).length === 1 && s.queue()?.queued === 1);
+    // Each of these stays true while B's claim is held: B got its note, its claim time is set, C waits.
+    await until(() => s.received(b).length === 1);
+    await until(() => timers.held() === 1);
+    await until(() => s.queue()?.queued === 1);
     assert.deepEqual(items(s), [[c, 'note']]);
-    // B never reports a new turn: after the claim time its slot is free again.
-    await until(() => s.received(c).length === 1, 1000);
+    assert.deepEqual(s.received(c), [], 'B holds the only slot');
+    // B never reports a new turn: after the claim time its slot is free again, and C gets its note.
+    let beforeClaimEnded: number | undefined;
+    timers.run(() => (beforeClaimEnded = s.received(c).length));
+    await until(() => s.received(c).length === 1);
+    assert.equal(beforeClaimEnded, 0, 'C waited for the end of the claim time');
+    assert.deepEqual(items(s), []);
   } finally {
     await s.cleanup();
   }

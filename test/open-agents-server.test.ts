@@ -39,6 +39,30 @@ async function waitFor<T>(check: () => Promise<T | undefined>, ms = 8000): Promi
 }
 
 const statePath = () => join(scratch, 'run', 'mirador', 'state.json');
+
+/** A bound only, for slow or busy machines: a passing start returns as soon as the server is ready (issue #23). */
+const READY_MS = 60_000;
+
+/**
+ * Waits until `child` is ready: the server writes state.json whole (renamed into place) once it listens,
+ * so the file is there, parses and names this process. Fails at once, with the server's output, when the
+ * server exits first; after READY_MS it fails naming what it waited for.
+ */
+async function ready(child: ChildProcess): Promise<{ pid: number; launchSecret: string }> {
+  const deadline = Date.now() + READY_MS;
+  for (;;) {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      throw new Error(`the server exited (code ${child.exitCode}, signal ${child.signalCode}) before writing ${statePath()}; its output:\n${output}`);
+    }
+    const state = await readFile(statePath(), 'utf8').then((text) => JSON.parse(text) as { pid?: unknown; launchSecret?: unknown }).catch(() => undefined);
+    if (state && state.pid === child.pid && typeof state.launchSecret === 'string') return { pid: child.pid as number, launchSecret: state.launchSecret };
+    if (Date.now() > deadline) {
+      throw new Error(`timed out after ${READY_MS} ms waiting for the server (pid ${child.pid}) to write ${statePath()} with its pid and launchSecret; its output:\n${output}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
 const recordsPath = () => join(scratch, 'state', 'mirador', 'open-agents.json');
 const records = async () => JSON.parse(await readFile(recordsPath(), 'utf8')) as { owner: string; agents: Array<{ id: string; rel: string; cwd: string; cols: number; rows: number; sessionFile: string | null }> };
 
@@ -62,7 +86,7 @@ async function start() {
   });
   server.stdout?.on('data', (d) => (output += d));
   server.stderr?.on('data', (d) => (output += d));
-  const state = await waitFor(async () => JSON.parse(await readFile(statePath(), 'utf8')));
+  const state = await ready(server);
   const boot = await fetch(`${base}/bootstrap`, { method: 'POST', headers: { authorization: `Bearer ${state.launchSecret}` } });
   const nonce = new URL(((await boot.json()) as { url: string }).url).hash.replace('#launch=', '');
   const session = await fetch(`${base}/api/session`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ nonce }) });
