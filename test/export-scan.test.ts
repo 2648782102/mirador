@@ -1,8 +1,9 @@
 // Public release T1 (S3, L12, L13, L18): scripts/export-scan.ts runs over the extracted export and
-// finds the owner's name, home paths, e-mail addresses and private issue numbers outside the allowed
-// places. The matcher cases are synthetic lines; the last test scans a fresh `git archive HEAD`. This
-// file is exported and scanned too, so its synthetic hits are put together at run time: the name from
-// escapes and the script's letters, paths, addresses and numbers from their pieces.
+// finds the owner's name, home paths, e-mail addresses and the excluded paths outside the allowed places;
+// issue and PR numbers are legitimate references in the public repository and are not looked for (L45).
+// The matcher cases are synthetic lines; the last test scans a fresh `git archive HEAD`. This file is
+// exported and scanned too, so its synthetic hits are put together at run time: the name from escapes
+// and the script's letters, paths and addresses from their pieces.
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -106,14 +107,20 @@ test('e-mail: reserved example domains and GitHub noreply are allowed; ZURAI\'s 
   assert.deepEqual(hits('package.json', '"@xterm/xterm": "^6.0.0", "esbuild@0.28.2"'), [], 'package specs are not addresses');
 });
 
-test('issues: mata-2p/mirador URLs and #NN above #14 are hits; #1 to #14, colors, entities and other repos are not', () => {
-  assert.deepEqual(hits('README.md', `([${HASH}1](https://${REPO}/issues/1)) and ${HASH}13, ${HASH}14, ${REPO}/issues/14`), []);
-  assert.deepEqual(hits('README.md', `([${HASH}111](https://${REPO}/issues/111))`), [`1:issue ${REPO}/issues/111`, `1:issue ${HASH}111`]);
-  assert.deepEqual(hits('docs/a.md', `https://${REPO}/pull/15 (PR ${HASH}15), ${HASH}20.`), [`1:issue ${REPO}/pull/15`, `1:issue ${HASH}15`, `1:issue ${HASH}20`]);
-  assert.deepEqual(hits('public/styles.css', `  --rule: #485060; color: ${HASH}111; border: ${HASH}123;`), [], 'a stylesheet holds colors, not references');
-  assert.deepEqual(hits('test/x.test.ts', "linear-gradient(to bottom, #000 calc(100%)) fill='#060407' '#485060' '#11223344'"), [], 'a leading zero or 6/8 digits is a color');
-  assert.deepEqual(hits('docs/a.md', `&${HASH}39; nodejs/node${HASH}12345 page.html${HASH}300 ${HASH}${HASH}14 ${HASH}14a ${HASH}14-b`), [], 'entities, other repos, URL fragments, hex words');
-  assert.deepEqual(hits('test/x.test.ts', "'Queued: #3' and (#2)"), []);
+test('issue and PR numbers are not hits: #NN of any size and mata-2p/mirador issues and pull URLs, in README.md, docs and test files (L45)', () => {
+  const references = [
+    `([${HASH}1](https://${REPO}/issues/1)) and ${HASH}13, ${HASH}14, ${REPO}/issues/14`,
+    `([${HASH}111](https://${REPO}/issues/111))`,
+    `https://${REPO}/pull/15 (PR ${HASH}15), ${HASH}20, ${HASH}34 and ${HASH}12345.`,
+    `see https://${REPO}/issues/999999 and https://${REPO}/pull/40${HASH}issuecomment-1`,
+    "'Queued: #3' and (#2)",
+  ];
+  for (const file of ['README.md', 'docs/a.md', 'docs/features.md', 'CHANGELOG.md', 'test/x.test.ts']) {
+    for (const line of references) assert.deepEqual(scanText(file, line), [], `${file}: ${line}`);
+  }
+  // The other rules still run on a line that holds a reference.
+  const mixed = `${HASH}40 by ${FIRST}, ${HOME}/someone, someone${AT}gmail.com, ${TASKS}/x.md`;
+  assert.deepEqual(hits('docs/a.md', mixed), [`1:name ${mixed}`, `1:home ${HOME}/someone`, `1:email someone${AT}gmail.com`, `1:path ${TASKS}/x.md`]);
 });
 
 test('excluded paths: the task folder, the artboards\' folder and the informe are hits wherever an exported file names them (T2)', () => {
@@ -227,21 +234,21 @@ test('the CLI prints each hit as file:line:kind and exits 1; with none it exits 
   scratches.push(dir);
   mkdirSync(join(dir, 'docs'));
   writeFileSync(join(dir, 'NOTICE'), `Copyright 2026 ${FULL}\n`);
-  writeFileSync(join(dir, 'docs', 'a.md'), `intro\nsee ${HASH}40 and ${USERS}/someone\n`);
+  writeFileSync(join(dir, 'docs', 'a.md'), `intro\nsee ${HASH}40, someone${AT}gmail.com and ${USERS}/someone\n`);
   writeFileSync(join(dir, 'logo.png'), Buffer.concat([Buffer.from([0x89, 0x50, 0]), Buffer.from(FIRST)]));
   const run = (...args: string[]) => spawnSync(process.execPath, [join(ROOT, 'scripts', 'export-scan.ts'), ...args], { encoding: 'utf8' });
   const failing = run(dir);
   assert.equal(failing.status, 1);
-  assert.equal(failing.stdout, 'docs/a.md:2:home\ndocs/a.md:2:issue\n');
+  assert.equal(failing.stdout, 'docs/a.md:2:home\ndocs/a.md:2:email\n', 'the issue number is not a hit');
   assert.equal(failing.stderr, 'export scan: 2 text files, 2 hits, 1 allowed\n', 'the binary file is skipped');
   const listed = run(dir, '--allowed');
   assert.equal(listed.status, 1);
-  assert.equal(listed.stdout, 'docs/a.md:2:home\ndocs/a.md:2:issue\nNOTICE:1:name allowed: NOTICE: the copyright line (L12)\n');
-  writeFileSync(join(dir, 'docs', 'a.md'), `intro\nsee ${HASH}4\n`);
+  assert.equal(listed.stdout, 'docs/a.md:2:home\ndocs/a.md:2:email\nNOTICE:1:name allowed: NOTICE: the copyright line (L12)\n');
+  writeFileSync(join(dir, 'docs', 'a.md'), `intro\nsee ${HASH}40 and https://${REPO}/pull/40\n`);
   const clean = run(dir);
   assert.equal(clean.status, 0);
   assert.equal(clean.stdout, '');
-  assert.equal(clean.stderr, 'export scan: 2 text files, 0 hits, 2 allowed\n');
+  assert.equal(clean.stderr, 'export scan: 2 text files, 0 hits, 1 allowed\n', 'an issue or PR reference is neither a hit nor an allowed entry');
   const usage = run();
   assert.equal(usage.status, 2);
   assert.equal(usage.stderr, 'usage: node scripts/export-scan.ts <extracted-dir> [--allowed]\n');

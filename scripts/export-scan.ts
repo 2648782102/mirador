@@ -1,7 +1,7 @@
 // Public release T1 (S3, L12, L13, L18): scans an extracted export (`git archive HEAD | tar -x`) for
-// what must not travel in it: the owner's name, home paths, e-mail addresses, private issue or PR
-// numbers and (T2, S2) the paths the export leaves out. Each kind has its allowed places, listed
-// below; anything else is a hit.
+// what must not travel in it: the owner's name, home paths, e-mail addresses and (T2, S2) the paths
+// the export leaves out. Each kind has its allowed places, listed below; anything else is a hit.
+// Issue and PR numbers are not looked for: in the public repository they are legitimate references (L45).
 //   node scripts/export-scan.ts <extracted-dir> [--allowed]
 // Prints each hit as `file:line:kind` and exits 1 when there is any, 0 when there is none (2 on bad
 // usage). --allowed also prints the allowed entries, each with the reason it is allowed.
@@ -10,7 +10,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export type Kind = 'name' | 'home' | 'email' | 'issue' | 'path';
+export type Kind = 'name' | 'home' | 'email' | 'path';
 
 export interface Entry {
   file: string;
@@ -89,17 +89,6 @@ const CONTACT_LINES: Record<string, RegExp> = {
 const contactWhy = (file: string) => file === 'CODE_OF_CONDUCT.md'
   ? 'ZURAI\'s contact on the Code of Conduct reporting line (L30)'
   : 'ZURAI\'s contact in the credits (L13, L19)';
-
-/** Public issues and PRs of the new repository: #1 to #14 (L17, L19). Anything higher is a private number. */
-export const LAST_PUBLIC_ISSUE = 14;
-const ISSUE_URL = /github\.com\/mata-2p\/mirador\/(?:issues|pull)\/(\d+)/g;
-/**
- * `#NN`: a `#` not after a word character, `&`, `/` or another `#` (so not `repo#12`, `&#39;` or a URL
- * fragment), then digits not followed by a word character or `-`. CSS hex colors are told apart by:
- * a stylesheet (.css) is not scanned for them, a leading zero (`#000`, `#060407`) is a color, and so
- * is a 6- or 8-digit token (`#485060`); no issue number has a leading zero or six digits.
- */
-const HASH_REF = /(?<![\w&/#])#(\d+)(?![\w-])/g;
 
 /**
  * The paths the export leaves out (S2, T2): the task folder, the artboards' folder and the informe.
@@ -232,7 +221,6 @@ export function scanText(file: string, content: string): Entry[] {
   const entries: Entry[] = [];
   const lines = content.split('\n');
   const author = file === 'README.md' ? sectionLines(lines, '## Author') : new Set<number>();
-  const stylesheet = file.endsWith('.css');
   lines.forEach((text, index) => {
     const line = index + 1;
     const add = (kind: Kind, match: string, allowed?: string) => entries.push(allowed ? { file, line, kind, match, allowed } : { file, line, kind, match });
@@ -259,19 +247,6 @@ export function scanText(file: string, content: string): Entry[] {
     }
 
     for (const m of text.matchAll(EXCLUDED_PATH)) add('path', m[0], pathAllowed(file, text, m[0]));
-
-    for (const m of text.matchAll(ISSUE_URL)) {
-      const n = Number(m[1]);
-      add('issue', m[0], n >= 1 && n <= LAST_PUBLIC_ISSUE ? `public #${n} (L17, L19)` : undefined);
-    }
-    if (!stylesheet) {
-      for (const m of text.matchAll(HASH_REF)) {
-        const digits = m[1];
-        if (digits.startsWith('0') || digits.length === 6 || digits.length === 8) continue;
-        const n = Number(digits);
-        add('issue', m[0], n >= 1 && n <= LAST_PUBLIC_ISSUE ? `public #${n} (L17, L19)` : undefined);
-      }
-    }
   });
   return entries;
 }
