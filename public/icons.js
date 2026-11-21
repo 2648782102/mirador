@@ -9,7 +9,7 @@ export const SVG_NS = 'http://www.w3.org/2000/svg';
 
 /**
  * name → the shapes of its <symbol>, as [tag, attributes], copied from the design. Only the
- * icons the app shows, plus mark, sliders and sun for the brand and the settings sheet, the
+ * icons the app shows, plus mark, sliders and sun for the brand (and the credits) and the settings sheet, the
  * gentle-shell rose, Sereno's owl (a whole owl with ear tufts, big eyes and a beak, perched on the rose's
  * stem with its leaves and spark; option 2b), the state filter's funnel and the help guide's badge.
  */
