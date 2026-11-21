@@ -40,7 +40,7 @@ async function waitFor<T>(check: () => Promise<T | undefined>, ms = 8000): Promi
 
 const statePath = () => join(scratch, 'run', 'mirador', 'state.json');
 
-/** A bound only, for slow or busy machines: a passing start returns as soon as the server is ready (issue #23). */
+/** A bound only, for slow or busy machines: a passing start returns as soon as the server is ready. */
 const READY_MS = 60_000;
 
 /**

@@ -163,7 +163,7 @@ const items = (s: Awaited<ReturnType<typeof setup>>) => s.queue()?.items.map((it
 /**
  * The service's timers, where each one of `held` ms (the claim time) waits for `run()` before its time starts
  * to count; every other timer is a real one at once. A held claim cannot end while the test still looks at
- * the queue, so no wait depends on catching the short moment before it ends (issue #30).
+ * the queue, so no wait depends on catching the short moment before it ends.
  */
 function holdTimers(held: number) {
   const waiting = new Set<{ fn: () => void; cancelled: boolean; timer?: ReturnType<typeof setTimeout> }>();
