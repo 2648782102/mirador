@@ -1,6 +1,6 @@
 // Pins T5 (S10 credits, S11 credits intro) to the approved
 // artboard design/state-filter/01-chips-y-acordeon.html (.credits-dialog and its "Cinematic crawl"
-// look): the brand opens the credits; the first time a crawl, the rose and its flash reveal the
+// look): the brand opens the credits; the first time a crawl, Mirador's mark and its flash reveal the
 // still credits, which stay; later opens are still. The phases live in a pure model.
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
@@ -239,12 +239,24 @@ test('S10: the topbar brand is a button with an accessible name that opens the c
   assert.ok(own(creditsCss, 'button.brand:hover').background);
 });
 
-test('S10, S11: the credits use the shared modal, the rose symbol, the seen pref and reduced motion', () => {
+test('S10, S11: the credits use the shared modal, Mirador\'s mark symbol, the seen pref and reduced motion', () => {
   assert.match(creditsJs, /import \{ openDialog \} from '\/dialog\.js';/);
   assert.match(creditsJs, /openDialog\(\{/);
   assert.match(creditsJs, /className: 'credits-dialog'/);
-  assert.match(creditsJs, /icon\('rose'\)/);
-  assert.ok('rose' in (SYMBOLS as Record<string, unknown>));
+  // T29: Mirador's own drawing (the `mark` symbol, public/icon.svg) replaces the rose in the
+  // title, the intro and the replay button; the credits draw no rose anywhere.
+  assert.match(creditsJs, /icon\('mark'\)/);
+  assert.ok('mark' in (SYMBOLS as Record<string, unknown>));
+  assert.doesNotMatch(creditsJs, /icon\('rose'\)|\brose\(/);
+  assert.match(creditsJs, /title: \[mark\('credits-mark'\), t\('credits\.title'/);
+  assert.match(creditsJs, /el\('div', \{ class: 'mark-intro' \}, mark\('mark-big'\), el\('span', \{ class: 'flash' \}\)\)/);
+  assert.match(creditsJs, /onclick: \(\) => go\('replay'\) \}, mark\('replay-mark'\), t\('credits\.replay'\)/);
+  assert.doesNotMatch(creditsCss, /\.rose-(big|intro)|@keyframes rose-in/);
+  // Same sizes and colours as the rose had: 36px title, 120px intro, the credits' --rose.
+  assert.deepEqual(own(creditsCss, 'svg.icon.credits-mark'), { '--icon': '36px', color: 'var(--rose)' });
+  assert.equal(own(creditsCss, '.mark-big')['--icon'], '120px');
+  assert.equal(own(creditsCss, '.mark-big').color, 'var(--rose)');
+  assert.equal(own(creditsCss, 'svg.icon.replay-mark').color, 'var(--rose)');
   assert.match(creditsJs, /prefs\.read\(CREDITS_SEEN_PREF, false\)/);
   assert.match(creditsJs, /prefs\.write\(CREDITS_SEEN_PREF, true\)/);
   assert.match(creditsJs, /matchMedia\('\(prefers-reduced-motion: reduce\)'\)/);
@@ -258,12 +270,12 @@ test('S10, S11: the credits use the shared modal, the rose symbol, the seen pref
   assert.match(creditsJs, /class: 'credits-stage', 'aria-hidden': 'true', inert: true/);
 });
 
-test('S11: the crawl, the starry night, the rose, its flash and the reveal are the artboard keyframes, and reduced motion stills them', { skip: NO_DESIGN }, () => {
-  for (const name of ['crawl', 'twinkle', 'rose-in', 'flash', 'reveal']) assert.match(creditsCss, new RegExp(`@keyframes ${name} \\{`), name);
+test('S11: the crawl, the starry night, the mark, its flash and the reveal are the artboard keyframes, and reduced motion stills them', { skip: NO_DESIGN }, () => {
+  for (const name of ['crawl', 'twinkle', 'mark-in', 'flash', 'reveal']) assert.match(creditsCss, new RegExp(`@keyframes ${name} \\{`), name);
   assert.match(creditsCss, /@keyframes crawl \{ from \{ transform: rotateX\(22deg\) translateY\(var\(--crawl-from, 600px\)\); \} to \{ transform: rotateX\(22deg\) translateY\(calc\(-100% - 60px\)\); \} \}/);
   assert.deepEqual(own(creditsCss, '.crawl'), own(artboard, '.crawl'));
   assert.equal(own(creditsCss, '.credits-dialog[data-phase="crawl"] .crawl-text').animation, 'crawl var(--crawl-ms, 20s) linear forwards');
-  assert.equal(own(creditsCss, '.rose-big').color, 'var(--rose)');
+  assert.equal(own(creditsCss, '.mark-big').color, 'var(--rose)');
   assert.equal(own(creditsCss, '.credits-stage')['--rose'], '#ff76c3');
   assert.match(creditsCss, /@media \(prefers-reduced-motion: reduce\) \{[^@]*\.credits-replay \{ display: none; \}/);
   assert.match(creditsCss, /@media \(prefers-reduced-motion: reduce\) \{[^@]*\.credits-stage::after \{ animation: none; \}/);

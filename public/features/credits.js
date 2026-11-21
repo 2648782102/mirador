@@ -6,8 +6,8 @@
 //   not the maker.
 // - The modal is the shared one (public/dialog.js): the page behind is inert, Escape closes it and
 //   the focus goes back to the brand. "Saltar" sits over the stage while the intro plays.
-// - The first open plays the intro on a stage over the whole dialog: the crawl, the rose and the
-//   flash of its sparkle, which reveals the still credits. The phases come from credits-model.js;
+// - The first open plays the intro on a stage over the whole dialog: the crawl, Mirador's mark and
+//   the flash of its cursor, which reveals the still credits. The phases come from credits-model.js;
 //   later opens are still (the `creditsSeen` pref) and reduced motion always opens them still.
 // - The title names the app: Mirador in every mode (brandOf() in public/mode-model.js).
 import { $, el, prefs, richText, state, t } from '/core.js';
@@ -17,11 +17,11 @@ import { agentIcon } from '/icons/agents.js';
 import { brandOf } from '/mode-model.js';
 import { CREDITS_CONTACTS, CREDITS_LOGOS, CREDITS_SEEN_PREF, CREDITS_THANKS, CREDITS_TOOLS, INTRO_MS, ZURAI_LOGOS, ZURAI_SITE, creditsStep } from '/features/credits-model.js';
 
-/** gentle-shell's rose (the `rose` symbol in --rose) with a class for its size. */
-function rose(className) {
-  const mark = icon('rose');
-  mark.classList.add(className);
-  return mark;
+/** Mirador's own drawing (the `mark` symbol, public/icon.svg) with a class for its size and colour. */
+function mark(className) {
+  const drawing = icon('mark');
+  drawing.classList.add(className);
+  return drawing;
 }
 
 /** An agent logo's credit: the logo, its agent and its source with the licence. */
@@ -120,9 +120,9 @@ export function openCredits() {
     'div',
     { class: 'credits-stage', 'aria-hidden': 'true', inert: true },
     el('div', { class: 'crawl' }, crawlText),
-    el('div', { class: 'rose-intro' }, rose('rose-big'), el('span', { class: 'flash' })),
+    el('div', { class: 'mark-intro' }, mark('mark-big'), el('span', { class: 'flash' })),
   );
-  const replay = el('button', { type: 'button', class: 'btn sm ghost', onclick: () => go('replay') }, rose('gs-rose'), t('credits.replay'));
+  const replay = el('button', { type: 'button', class: 'btn sm ghost', onclick: () => go('replay') }, mark('replay-mark'), t('credits.replay'));
   const still = el(
     'div',
     { class: 'credits-static' },
@@ -167,7 +167,7 @@ export function openCredits() {
   };
 
   const closed = openDialog({
-    title: [rose('credits-mark'), t('credits.title', { brand: brandOf(state.config) })],
+    title: [mark('credits-mark'), t('credits.title', { brand: brandOf(state.config) })],
     body: [stage, still],
     actions: [],
     close: t('credits.close'),

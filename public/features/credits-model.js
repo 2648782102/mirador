@@ -1,14 +1,14 @@
 // The credits (.credits-dialog): what they list and the intro's
 // phases. Pure module: public/features/credits.js and the tests import it.
-// - The first open plays the crawl, then the rose, then the flash of its sparkle, which reveals
+// - The first open plays the crawl, then Mirador's mark (the 'rose' phase), then the flash of its cursor, which reveals
 //   the still credits ('done'); they stay. Once seen, or with reduced motion, they open still.
 // - "Saltar" jumps to the still credits; "Repetir la animación" plays the crawl again.
 // - The still credits also name the agent logos the ▾ menu shows (public/icons/agents.js), with
 //   their source and licence.
 import { AGENT_LOGOS, SIMPLE_ICONS } from '../icons/agents.js';
 
-/** How long each intro phase lasts. The crawl is the CSS animation's length; the rose grows in
-    900 ms and its sparkle opens at 1 s; the flash covers the window before it ends at 1100 ms. */
+/** How long each intro phase lasts. The crawl is the CSS animation's length; the mark grows in
+    900 ms and its cursor flashes open at 1 s; the flash covers the window before it ends at 1100 ms. */
 export const INTRO_MS = { crawl: 20000, rose: 1000, flash: 900 };
 
 const INTRO = ['crawl', 'rose', 'flash'];
