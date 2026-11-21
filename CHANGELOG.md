@@ -3,7 +3,7 @@
 All notable changes to Mirador, written for the people who run it. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.1.0] - Unreleased
+## [0.1.0] - 2026-11-20
 
 The first public version: a local dashboard on `127.0.0.1` for your project folders, with agent terminals inside it.
 Linux is supported, macOS is experimental, and Windows works through WSL2. Mirador sends no telemetry.
@@ -127,3 +127,5 @@ Linux is supported, macOS is experimental, and Windows works through WSL2. Mirad
   are hidden in Telegram messages.
 - CI scans the git history for secrets with gitleaks.
 - No telemetry and no accounts.
+
+[0.1.0]: https://github.com/mata-2p/mirador/releases/tag/v0.1.0
