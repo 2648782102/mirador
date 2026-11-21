@@ -69,6 +69,35 @@ const killQuietly = (pid: number) => {
 
 const count = (text: string, part: string) => text.split(part).length - 1;
 
+/**
+ * Runs `body`, then stops the shells it started. A cleanup failure is reported
+ * with the body's error instead of replacing it: a failed assertion and a hung
+ * shell are the two failures this helper is most likely to see together.
+ */
+async function stopping(
+  stop: () => Promise<void>,
+  body: () => Promise<void>,
+): Promise<void> {
+  let failure: unknown;
+  try {
+    await body();
+  } catch (error) {
+    failure = error;
+  }
+
+  try {
+    await stop();
+  } catch (cleanupError) {
+    if (failure === undefined) throw cleanupError;
+    if (failure instanceof Error) {
+      throw new AggregateError([failure, cleanupError], "agent-rc test and cleanup both failed", { cause: failure });
+    }
+    throw new AggregateError([failure, cleanupError], "agent-rc test and cleanup both failed");
+  }
+
+  if (failure !== undefined) throw failure;
+}
+
 /** Whether `command` (its full command line) runs as a child of `pid`, by `ps` (Linux and macOS). */
 const runsChild = (pid: number, command: string) =>
   execFileSync('ps', ['-A', '-o', 'ppid=,command='], { encoding: 'utf8' })
@@ -128,7 +157,7 @@ async function start(command: string, bashrc: string | null) {
 
 test('each prompt bash draws once the agent has ended is marked with OSC 133 A, after the agent output and before the prompt', async () => {
   const { shell, until, stop } = await start("printf 'agent-ran\\n'", null);
-  try {
+  await stopping(stop, async () => {
     let out = await until((text) => text.includes('PS1> '), 'the first prompt');
     assert.equal(count(out, 'agent-ran'), 1, 'the agent ran once');
     assert.equal(count(out, MARK), 1);
@@ -136,14 +165,12 @@ test('each prompt bash draws once the agent has ended is marked with OSC 133 A, 
     shell.write('true\r');
     out = await until((text) => count(text, 'PS1> ') === 2, 'the second prompt');
     assert.equal(count(out, MARK), 2, 'one mark per prompt');
-  } finally {
-    await stop();
-  }
+  });
 });
 
 test("the user's PROMPT_COMMAND (a string) still runs first at every prompt and still sees the last exit status", async () => {
   const { shell, until, stop } = await start("printf 'agent-ran\\n'", `PROMPT_COMMAND='printf "user-pc:%s\\\\n" "$?"'\n`);
-  try {
+  await stopping(stop, async () => {
     await until((text) => text.includes('PS1> '), 'the first prompt');
     shell.write('(exit 7)\r');
     const out = await until((text) => count(text, 'PS1> ') === 2, 'the second prompt');
@@ -152,14 +179,12 @@ test("the user's PROMPT_COMMAND (a string) still runs first at every prompt and 
     assert.ok(second.indexOf('user-pc:7') < second.indexOf(MARK), JSON.stringify(second));
     assert.equal(count(out, 'user-pc:'), 2);
     assert.equal(count(out, MARK), 2);
-  } finally {
-    await stop();
-  }
+  });
 });
 
 test("the user's PROMPT_COMMAND (an array, bash 5.1+) keeps every element, each seeing the last exit status", { skip: !arrayPromptCommand && 'bash < 5.1 has no PROMPT_COMMAND array' }, async () => {
   const { shell, until, stop } = await start("printf 'agent-ran\\n'", `PROMPT_COMMAND=('printf "a:%s\\\\n" "$?"' 'printf "b:%s\\\\n" "$?"')\n`);
-  try {
+  await stopping(stop, async () => {
     await until((text) => text.includes('PS1> '), 'the first prompt');
     shell.write('(exit 5)\r');
     const out = await until((text) => count(text, 'PS1> ') === 2, 'the second prompt');
@@ -167,26 +192,22 @@ test("the user's PROMPT_COMMAND (an array, bash 5.1+) keeps every element, each 
     assert.match(second, /a:5/);
     assert.match(second, /b:5/, 'the mark keeps the status for the elements after it');
     assert.equal(count(out, MARK), 2);
-  } finally {
-    await stop();
-  }
+  });
 });
 
 test('a readonly PROMPT_COMMAND is left alone, without an error on screen, and the agent still starts', async () => {
   const { shell, until, stop } = await start("printf 'agent-ran\\n'", `PROMPT_COMMAND='printf "user-pc\\\\n"'\nreadonly PROMPT_COMMAND\n`);
-  try {
+  await stopping(stop, async () => {
     const out = await until((text) => text.includes('PS1> '), 'the first prompt');
     assert.match(out, /agent-ran/);
     assert.match(out, /user-pc/);
     assert.doesNotMatch(out, /readonly/i);
-  } finally {
-    await stop();
-  }
+  });
 });
 
 test('the agent command still runs once from the rcfile and is the newest history entry; MIRADOR_AGENT_COMMAND is gone', async () => {
   const { shell, until, stop } = await start("printf 'agent-ran\\n'", null);
-  try {
+  await stopping(stop, async () => {
     await until((text) => text.includes('PS1> '), 'the first prompt');
     shell.write('history 2; printf "var:[%s]\\n" "$MIRADOR_AGENT_COMMAND"\r');
     // The next prompt, not 'var:[': the echo of the typed line already holds that, before bash has run it.
@@ -194,21 +215,35 @@ test('the agent command still runs once from the rcfile and is the newest histor
     assert.match(out, /\d+ {2}printf 'agent-ran\\n'/);
     assert.match(out, /var:\[\]/);
     assert.equal(count(out, 'agent-ran\r\n'), 1, 'it ran once');
-  } finally {
-    await stop();
-  }
+  });
 });
 
 test('an agent ended by Ctrl-C still gets its prompt marked (bash then skips the rest of the rcfile)', async () => {
   const { shell, until, stop } = await start('sleep 30', null);
-  try {
+  await stopping(stop, async () => {
     // Ctrl-C once the agent runs: earlier, it would cut bash's start-up short instead of ending the agent.
     await waitFor(() => runsChild(shell.pid, 'sleep 30') || undefined, 'the agent (sleep 30) to run under bash', 5000);
     shell.write('\x03');
     const out = await until((text) => text.includes('PS1> '), 'the prompt after Ctrl-C');
     assert.equal(count(out, MARK), 1);
     assert.ok(out.indexOf(MARK) < out.indexOf('PS1> '), JSON.stringify(out));
-  } finally {
-    await stop();
-  }
+  });
+});
+
+test('a cleanup failure keeps the original assertion error', async () => {
+  const assertionError = new Error('the prompt never appeared');
+  const cleanupError = new Error('bash still runs after SIGKILL');
+
+  await assert.rejects(
+    stopping(
+      async () => { throw cleanupError; },
+      async () => { throw assertionError; },
+    ),
+    (error: unknown) => {
+      assert.ok(error instanceof AggregateError);
+      assert.deepEqual(error.errors, [assertionError, cleanupError]);
+      assert.equal(error.cause, assertionError);
+      return true;
+    },
+  );
 });
