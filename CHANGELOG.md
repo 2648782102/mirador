@@ -100,8 +100,6 @@ Linux is supported, macOS is experimental, and Windows works through WSL2. Mirad
 
 ### Fixed
 
-- The agent terminal tests no longer hide a failed assertion when their cleanup also fails; both errors are
-  reported.
 - `mirador stop` left agents running, so the next start ran each project twice; a terminal killed for lack of memory
   showed "exit 0" instead of its signal.
 - A folder opened by hand during a paused restore ran twice at the next start.
