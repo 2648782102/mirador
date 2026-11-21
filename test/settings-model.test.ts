@@ -20,15 +20,15 @@ import { showsTabsBar } from '../public/terminal-groups.js';
 const es = (MESSAGES as any).es as Record<string, string>;
 const en = (MESSAGES as any).en as Record<string, string>;
 
-test('S4: the sheet has five rows in the artboard order: night shift, terminals, theme, language, help (gentle-deck-state-filter S9)', () => {
-  assert.deepEqual(SETTINGS_ROWS.map((row) => row.id), ['night', 'layout', 'theme', 'language', 'help']);
-  assert.deepEqual(SETTINGS_ROWS.map((row) => es[row.key]), ['Piloto automático', 'Terminales', 'Tema', 'Idioma', 'Ayuda']);
-  assert.deepEqual(SETTINGS_ROWS.map((row) => row.icon), ['sereno', 'terminal', 'sun', null, 'help']);
+test('S4: the sheet has six rows: night shift, terminals, theme, language (the artboard order), then tree follows the terminal and help (gentle-deck-state-filter S9)', () => {
+  assert.deepEqual(SETTINGS_ROWS.map((row) => row.id), ['night', 'layout', 'theme', 'language', 'treeFollows', 'help']);
+  assert.deepEqual(SETTINGS_ROWS.map((row) => es[row.key]), ['Piloto automático', 'Terminales', 'Tema', 'Idioma', 'El árbol sigue a la terminal', 'Ayuda']);
+  assert.deepEqual(SETTINGS_ROWS.map((row) => row.icon), ['sereno', 'terminal', 'sun', null, 'sidebar', 'help']);
   for (const row of SETTINGS_ROWS) if (row.icon) assert.ok(row.icon in SYMBOLS, row.icon);
 });
 
-test('S4, S5: the night shift is the one switch; the other rows pick between named options', () => {
-  assert.deepEqual(SETTINGS_ROWS.map((row) => row.control), ['switch', 'choices', 'choices', 'choices', 'button']);
+test('S4, S5: the night shift and tree follows the terminal are the two switches; the other rows pick between named options', () => {
+  assert.deepEqual(SETTINGS_ROWS.map((row) => row.control), ['switch', 'choices', 'choices', 'choices', 'switch', 'button']);
 });
 
 test('S4: only the terminals row belongs to Development (Seguimiento hides it, as it hid the old Tabs/Grid switch)', () => {
