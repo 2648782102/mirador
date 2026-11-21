@@ -4,16 +4,19 @@
 // - mountSettings() builds the rows; app.js calls it at start, before it wires `data-lang` and
 //   public/terminals.js wires `data-layout`, so both keep their own handlers and pressed state.
 // - The theme row calls setTheme() and follows the `theme` event.
+// - The "El árbol sigue a la terminal" switch turns the tree reveal on and off; its choice lives in
+//   core.js prefs (`mirador.treeFollows`, tree-reveal-model.js), which public/terminals.js reads.
 // - The "Ayuda" row's "Abrir la guía" opens the help guide (public/features/help.js).
 // - The night switch and the "Piloto automático" chip follow GET /api/night through
 //   public/features/night.js (its `night` event, plus a light read every NIGHT_POLL_MS while the
 //   window is visible) and switch it with toggleNight(), the strip's former switch.
-import { $, el, getTheme, on, setTheme, state, t } from '/core.js';
+import { $, el, getTheme, on, prefs, setTheme, state, t } from '/core.js';
 import { openGuide } from '/features/help.js';
 import { nightSwitchState, readNightStatus, toggleNight } from '/features/night.js';
 import { icon } from '/icons.js';
 import { showsExtra } from '/mode-model.js';
-import { SETTINGS_ROWS, nightSwitchView, pressedChoices, sheetCloses } from '/settings-model.js';
+import { SETTINGS_ROWS, nightSwitchView, pressedChoices, sheetCloses, treeFollowsSwitchView } from '/settings-model.js';
+import { readTreeFollows, writeTreeFollows } from '/features/tree-reveal-model.js';
 
 const NIGHT_POLL_MS = 30_000;
 
@@ -22,6 +25,8 @@ let sheet;
 let nightSwitch;
 let nightWord;
 let nightError;
+let treeFollowsSwitch;
+let treeFollowsWord;
 let timer = null;
 
 function choiceButton(row, choice) {
@@ -47,6 +52,7 @@ function control(row) {
   if (row.control === 'button') {
     return el('button', { type: 'button', class: 'btn sm', 'aria-keyshortcuts': row.shortcut, 'data-i18n': row.buttonKey, onclick: () => openGuide() }, t(row.buttonKey));
   }
+  if (row.id === 'treeFollows') return treeFollowsControl(row);
   nightWord = el('span', { class: 'switch-state', 'aria-hidden': 'true' });
   nightSwitch = el(
     'button',
@@ -55,6 +61,29 @@ function control(row) {
     el('span', { class: 'switch-track', 'aria-hidden': 'true' }, el('span', { class: 'switch-thumb' })),
   );
   return nightSwitch;
+}
+
+/** The "El árbol sigue a la terminal" switch: a press flips the stored choice and redraws it. */
+function treeFollowsControl(row) {
+  treeFollowsWord = el('span', { class: 'switch-state', 'aria-hidden': 'true' });
+  treeFollowsSwitch = el(
+    'button',
+    {
+      type: 'button',
+      class: 'switch',
+      role: 'switch',
+      'aria-checked': 'true',
+      'aria-labelledby': `settings-${row.id}-label`,
+      'aria-describedby': row.hintKey ? `settings-${row.id}-hint` : undefined,
+      onclick: () => {
+        writeTreeFollows(prefs, !readTreeFollows(prefs));
+        renderTreeFollows();
+      },
+    },
+    treeFollowsWord,
+    el('span', { class: 'switch-track', 'aria-hidden': 'true' }, el('span', { class: 'switch-thumb' })),
+  );
+  return treeFollowsSwitch;
 }
 
 /** A row's icon; Sereno's owl takes the accent color. */
@@ -89,6 +118,13 @@ export function mountSettings() {
   );
   renderTheme();
   renderNight();
+  renderTreeFollows();
+}
+
+function renderTreeFollows() {
+  const view = treeFollowsSwitchView(readTreeFollows(prefs));
+  treeFollowsSwitch.setAttribute('aria-checked', String(view.checked));
+  treeFollowsWord.textContent = t(view.wordKey);
 }
 
 function renderTheme() {
@@ -161,6 +197,7 @@ export async function init() {
   on('theme', renderTheme);
   on('night', renderNight);
   on('language', renderNight);
+  on('language', renderTreeFollows);
   // Plain mode has no night shift (public/mode-model.js): its row hides and GET /api/night is never read.
   if (!showsExtra(state.config, 'night')) {
     nightSwitch.closest('.set-row').hidden = true;

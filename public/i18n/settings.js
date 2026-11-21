@@ -13,6 +13,8 @@ export default {
     'settings.theme.gentleman': 'Gentleman',
     'settings.theme.gentlemanLabel': 'Gentleman Sexy',
     'settings.language': 'Language',
+    'settings.treeFollows': 'Tree follows the terminal',
+    'settings.treeFollowsHint': 'Clicking a tab or a grid tile opens its folder in the tree.',
     'settings.help': 'Help',
   },
   es: {
@@ -28,6 +30,8 @@ export default {
     'settings.theme.gentleman': 'Gentleman',
     'settings.theme.gentlemanLabel': 'Gentleman Sexy',
     'settings.language': 'Idioma',
+    'settings.treeFollows': 'El árbol sigue a la terminal',
+    'settings.treeFollowsHint': 'Al hacer clic en una pestaña o en la cuadrícula, el árbol abre su carpeta.',
     'settings.help': 'Ayuda',
   },
 };

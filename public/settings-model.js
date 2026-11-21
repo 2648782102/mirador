@@ -20,8 +20,9 @@ export const LANGUAGE_CHOICES = LANGUAGES.map((value) => ({ value, text: value.t
 
 /**
  * The sheet's rows, top to bottom. `control`
- * 'switch' is the only on/off setting; 'choices' rows press one of `choices`, marked with
- * `data-<attr>`. `developmentOnly` rows hide while Seguimiento shows (public/features/tracking.js).
+ * 'switch' rows are on/off settings: the autopilot, and "El árbol sigue a la terminal", which lets a
+ * tab or tile click reveal the terminal's folder in the tree (public/features/tree-reveal-model.js);
+ * 'choices' rows press one of `choices`, marked with `data-<attr>`. `developmentOnly` rows hide while Seguimiento shows (public/features/tracking.js).
  * `hintKey` is a line under the row's name; the autopilot's says Sereno keeps watch.
  * The 'button' row "Ayuda" opens the help guide with a
  * text button (`buttonKey`) that announces its key, `shortcut`, with no keycap.
@@ -31,6 +32,7 @@ export const SETTINGS_ROWS = [
   { id: 'layout', key: 'settings.layout', icon: 'terminal', control: 'choices', groupKey: 'layout.group', attr: 'layout', choices: LAYOUT_CHOICES, developmentOnly: true },
   { id: 'theme', key: 'settings.theme', icon: 'sun', control: 'choices', groupKey: 'settings.theme', attr: 'theme-choice', choices: THEME_CHOICES },
   { id: 'language', key: 'settings.language', icon: null, control: 'choices', groupKey: 'lang.label', attr: 'lang', choices: LANGUAGE_CHOICES },
+  { id: 'treeFollows', key: 'settings.treeFollows', hintKey: 'settings.treeFollowsHint', icon: 'sidebar', control: 'switch' },
   { id: 'help', key: 'settings.help', icon: 'help', control: 'button', buttonKey: 'help.open', shortcut: 'Shift+?' },
 ];
 
@@ -54,6 +56,11 @@ export function nightSwitchView(status, { busy = false } = {}) {
     wordKey: busy ? 'night.switch.saving' : checked ? 'settings.switch.on' : 'settings.switch.off',
     chip: checked,
   };
+}
+
+/** The "El árbol sigue a la terminal" switch while the reveal is `on`: checked, and its visible word. */
+export function treeFollowsSwitchView(on) {
+  return { checked: on, wordKey: on ? 'settings.switch.on' : 'settings.switch.off' };
 }
 
 /**
