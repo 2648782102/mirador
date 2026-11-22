@@ -1,4 +1,5 @@
-// Plain mode's "Where it left off" for a folder: its branch,
+// Plain mode's "Where it left off" for a folder: what the user last asked Claude Code and where it
+// got to (the local record of its hooks, src/memory/left-off.ts, when there is one), its branch,
 // last commit, changed files and recent commits, and its NOTES.md as plain text, all from
 // GET /api/folder/git (src/http/routes/git-status.ts). It never calls an Engram route, so it works
 // without gentle-shell, pi or Engram. It sits where gentle-deck shows the Engram "Dónde quedó"
@@ -25,6 +26,17 @@ export function shortDate(iso) {
 }
 
 const UNAVAILABLE = ['not_repo', 'outside_root', 'git_missing', 'git_failed'];
+
+/** 'YYYY-MM-DD HH:MM' of an ISO time on this machine's clock (the record's times are UTC). */
+export function localTime(iso) {
+  const date = new Date(String(iso));
+  if (Number.isNaN(date.getTime())) return String(iso);
+  const two = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())} ${two(date.getHours())}:${two(date.getMinutes())}`;
+}
+
+/** The foot line's key for where the record's text comes from, as public/leftoff-model.js sourceKey says it. */
+const SOURCE_KEYS = { lastMessage: 'overview.fromClaudeMessage', compactSummary: 'overview.fromClaudeCompact', lastUserMessage: 'overview.fromClaudePrompt' };
 
 /**
  * The panel view (public/features/summary.js registerPanelView) for a folder in plain mode.
@@ -71,6 +83,19 @@ export function plainLeftOffView({ api, el, t, isPlain }) {
     return el('section', { class: 'plain-leftoff', 'aria-label': t('plainLeftOff.gitTitle') }, title, head, last, ...changesPart(git.changes), ...recent);
   }
 
+  // The local record: the user's last message, then the agent's text, both as text in a pre, never markup.
+  function leftOffPart(leftOff) {
+    const key = SOURCE_KEYS[leftOff.from] ?? SOURCE_KEYS.lastMessage;
+    return el(
+      'section',
+      { class: 'plain-leftoff', 'aria-label': 'Claude Code' },
+      el('h3', { class: 'plain-leftoff-title', translate: 'no' }, 'Claude Code'),
+      leftOff.lastUserMessage ? [el('h4', { class: 'leftoff-eyebrow' }, t('overview.lastUserMessage')), el('pre', { class: 'plain-notes' }, leftOff.lastUserMessage)] : null,
+      leftOff.text ? el('pre', { class: 'plain-notes' }, leftOff.text) : null,
+      el('p', { class: 'plain-git-more', title: leftOff.at }, t(key, { when: localTime(leftOff.at) })),
+    );
+  }
+
   function notesPart(notes) {
     const title = el('h3', { class: 'plain-leftoff-title', translate: 'no' }, 'NOTES.md');
     if (!notes) return el('section', { class: 'plain-leftoff', 'aria-label': 'NOTES.md' }, title, el('p', { class: 'notice' }, t('plainLeftOff.noNotes')));
@@ -92,7 +117,7 @@ export function plainLeftOffView({ api, el, t, isPlain }) {
       setHeading(t('overview.leftOff'));
       const data = await api('GET', `/api/folder/git?${new URLSearchParams({ ws: selection.ws, rel: selection.rel })}`);
       setHeading(t('overview.leftOff'), data.cwd);
-      return [gitPart(data.git), notesPart(data.notes)];
+      return [data.leftOff ? leftOffPart(data.leftOff) : null, gitPart(data.git), notesPart(data.notes)].filter(Boolean);
     },
   };
 }

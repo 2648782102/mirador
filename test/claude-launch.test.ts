@@ -94,7 +94,8 @@ test('bin/claude-hook reports each event as one mirador:attention line with the 
   const working = await hook(payload('UserPromptSubmit', { prompt: 'go' }));
   assert.equal(working.code, 0);
   assert.equal(working.out, '');
-  assert.equal(working.lines.length, 1);
+  // One attention line; the prompt itself follows it as a left-off line (test/left-off-view.test.ts).
+  assert.deepEqual(working.lines.map((sent) => sent.cmd), ['report-metadata', 'left-off']);
   const [line] = working.lines;
   assert.deepEqual({ ...line, seq: 0 }, { v: 1, cmd: 'report-metadata', pane: 'pane-1', source: 'mirador:attention', seq: 0, ttlMs: null, tokens: { session: ID }, clear: ['blocked', 'prompt', 'finished'] });
   assert.ok(Math.abs((line.seq as number) - Date.now()) < 10_000, 'seq is the clock');

@@ -13,6 +13,15 @@ Planned for 0.2.0.
 - A file path in a terminal's output that names a file of its workspace (absolute, `./x`, `../x` or `a/b.ts`, with
   an optional `:line` or `:line:col`) is a link: a click opens the file in the file editor. Only files the editor
   opens are links: not a symlink whose target leaves the workspace, nor a file over 1 MiB.
+- **Dónde quedó / Where it left off** works without Engram for Claude Code. Mirador keeps a local record per folder
+  of your last message, Claude's final message and its latest compaction summary, as Claude Code's hooks hand them
+  over (`prompt`, `last_assistant_message`, `compact_summary`), each cut to 16 KiB. The view shows the newer of this
+  record's text and Engram's latest session summary (a tie, or a record with only your prompt, keeps Engram's), with
+  your last message above it, and its foot names the source; plain
+  mode shows the record above the git state. The hook sends the text over Mirador's local socket and the server
+  validates and writes it (`~/.local/state/mirador/left-off/`, files 0600). It is plaintext on disk, never sent
+  anywhere and never logged. Records are removed after 30 days, or after the days set in the new config key
+  `leftOffDays`; `leftOff: false` turns the capture off. Mirador does not read Claude Code's configuration.
 - The groundwork for installing on Linux without compiling. A release workflow builds a prebuilt archive for
   Linux x64 and arm64 (the official Node 24, Mirador's TypeScript sources as they are, and production
   `node_modules` with `node-pty` built for glibc 2.28), with `SHA256SUMS` and a build-provenance attestation, and
@@ -21,6 +30,11 @@ Planned for 0.2.0.
   and on macOS, it installs from source as before. It never overwrites or deletes a git clone in
   `~/.local/share/mirador`, and it checks for no updates. `bin/mirador` runs the Node bundled in a prebuilt
   release before any other.
+
+### Changed
+
+- The foot of **Dónde quedó / Where it left off** names Engram when the summary comes from it ("Engram session
+  summary · …").
 
 ### Documentation
 

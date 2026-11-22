@@ -22,10 +22,12 @@ function inUse(path: string): Promise<boolean> {
 /**
  * Listens on the Unix socket at `path` (its folder is made 0700) and hands each
  * newline-terminated line to `onLine`. A connection that sends more than one
- * line's worth of bytes without a newline, too many lines, or nothing for two
- * seconds is dropped. Nothing is ever written back: clients only report.
+ * line's worth of bytes (`maxLineBytes`, MAX_LINE_BYTES by default) without a newline,
+ * too many lines, or nothing for two seconds is dropped. Each reader still checks its
+ * own cap. Nothing is ever written back: clients only report.
  */
-export async function listenForReports(path: string, onLine: (line: string) => void): Promise<Server> {
+export async function listenForReports(path: string, onLine: (line: string) => void, options: { maxLineBytes?: number } = {}): Promise<Server> {
+  const maxLineBytes = options.maxLineBytes ?? MAX_LINE_BYTES;
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   await chmod(dirname(path), 0o700);
   // Never take the socket from a Mirador that is serving it; only replace one left by a crash.
@@ -50,7 +52,7 @@ export async function listenForReports(path: string, onLine: (line: string) => v
           console.error('attention report failed:', error);
         }
       }
-      if (Buffer.byteLength(buffered) > MAX_LINE_BYTES) conn.destroy();
+      if (Buffer.byteLength(buffered) > maxLineBytes) conn.destroy();
     });
   });
   server.maxConnections = MAX_CONNECTIONS;

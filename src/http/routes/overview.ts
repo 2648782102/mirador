@@ -1,9 +1,11 @@
 import { realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { LEFT_OFF_DAYS, stateDir } from '../../config.ts';
 import { describeFolders, listFolders } from '../../folders/tree.ts';
 import { projectsUnder, windowMayMissDay, type Observation } from '../../memory/daily-summary.ts';
-import { RECENT_LIMIT } from '../../memory/engram.ts';
+import { EngramUnavailableError, RECENT_LIMIT } from '../../memory/engram.ts';
+import { leftOffDir, readLeftOff, type LeftOffRecord } from '../../memory/left-off.ts';
 import { memoryLookup } from '../../memory/folder-memory.ts';
 import { buildMemoryHealth, resolveFolders, type HealthFolder, type LookupCache } from '../../memory/memory-health.ts';
 import { buildWorkspaceOverview, folderProjects, type OverviewFolder } from '../../memory/overview.ts';
@@ -31,7 +33,10 @@ async function isRepo(path: string): Promise<boolean> {
  * per folder. The root gets a row too when Engram holds memory saved in it.
  *
  * GET /api/overview/folder?ws=&rel=&date=: the same row for one folder, resolved to its
- * Engram project the way /api/summary does, for the block above the daily summary.
+ * Engram project the way /api/summary does, for the block above the daily summary. Its
+ * "where it left off" is the newest of Engram's latest session summary and the folder's local
+ * record of Claude Code's hooks (src/memory/left-off.ts); with a record, an unreachable Engram
+ * still answers 200, from the record alone, with `engramUnavailable: true`.
  *
  * Both answer `truncated` like /api/summary: Engram's window of the newest
  * RECENT_LIMIT entries may not reach back to the whole day.
@@ -105,17 +110,29 @@ export const overviewRoutes: RouteModule = (ctx) => {
       handler: async ({ res, url }) => {
         const date = ctx.parseDate(url.searchParams.get('date'));
         const { workspace, path, rel } = await ctx.resolveFolder(url.searchParams.get('ws'), url.searchParams.get('rel'));
-        const project = await ctx.engram.projectFor(path);
-        let projects: string[];
+        const local: LeftOffRecord | null =
+          ctx.config.leftOff === false ? null : await readLeftOff(leftOffDir(stateDir()), workspace.id, rel, { days: ctx.config.leftOffDays ?? LEFT_OFF_DAYS });
+        let projects: string[] = [];
         // The Engram read as received: whether it is full (and may cut the day off) depends on all of it.
-        let window: Observation[];
-        if (project) {
-          projects = [project.project];
-          window = await ctx.engram.observations(project.project);
-        } else {
-          // A container folder (several repos inside): the projects bound below it, as /api/summary does.
-          projects = projectsUnder(path, await ctx.engram.projects());
-          window = projects.length ? await ctx.engram.allObservations() : [];
+        let window: Observation[] = [];
+        let project: Awaited<ReturnType<typeof ctx.engram.projectFor>> = null;
+        let engramUnavailable = false;
+        try {
+          project = await ctx.engram.projectFor(path);
+          if (project) {
+            projects = [project.project];
+            window = await ctx.engram.observations(project.project);
+          } else {
+            // A container folder (several repos inside): the projects bound below it, as /api/summary does.
+            projects = projectsUnder(path, await ctx.engram.projects());
+            window = projects.length ? await ctx.engram.allObservations() : [];
+          }
+        } catch (error) {
+          // Without a local record, an unreachable Engram is a 503 as before.
+          if (!(error instanceof EngramUnavailableError) || !local) throw error;
+          engramUnavailable = true;
+          projects = [];
+          window = [];
         }
         const observations = project ? window : window.filter((o) => projects.includes(o.project));
         const windowFull = window.length >= RECENT_LIMIT;
@@ -128,8 +145,18 @@ export const overviewRoutes: RouteModule = (ctx) => {
           hasMemory: observations.length > 0 || (windowFull && projects.length > 0),
         };
         // "Dónde quedó" pages its goal and folds, so they come whole: no "…" at the end of the last page.
-        const { rows } = buildWorkspaceOverview({ date, timeZone: ctx.config.timeZone, folders: [folder], observations, windowFull, foldLines: Infinity, goalLines: Infinity, goalChars: Infinity });
-        sendJson(res, 200, { cwd: path, projects, truncated: mayMissDay(window, date), row: rows[0] });
+        const { rows } = buildWorkspaceOverview({
+          date,
+          timeZone: ctx.config.timeZone,
+          folders: [folder],
+          observations,
+          windowFull,
+          foldLines: Infinity,
+          goalLines: Infinity,
+          goalChars: Infinity,
+          localLeftOff: () => local,
+        });
+        sendJson(res, 200, { cwd: path, projects, truncated: mayMissDay(window, date), row: rows[0], ...(engramUnavailable ? { engramUnavailable } : {}) });
       },
     },
     {

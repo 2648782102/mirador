@@ -8,7 +8,8 @@ import { herdrEnvProvider, herdrPaths, prepareHerdrDir } from '../../attention/h
 import { prepareOpencodePlugin } from '../../attention/opencode-plugin.ts';
 import { listenForReports } from '../../attention/socket.ts';
 import { AttentionStore, isTyping, type AttentionItem } from '../../attention/store.ts';
-import { runtimeDir } from '../../config.ts';
+import { LEFT_OFF_DAYS, runtimeDir, stateDir } from '../../config.ts';
+import { LEFT_OFF_MAX_LINE_BYTES, LeftOffStore, leftOffDir } from '../../memory/left-off.ts';
 import { provideNightAttention, whenNightService } from '../../night/service.ts';
 import type { RouteModule } from '../context.ts';
 import { HttpError, SECURITY_HEADERS, sendJson, sendNoContent } from '../respond.ts';
@@ -60,9 +61,21 @@ export const inboxRoutes: RouteModule = async (ctx) => {
     if (isTyping(data)) store.dismiss(id);
   });
 
+  // "Where it left off" without Engram: Claude Code's hooks send `left-off` lines on the same socket
+  // (src/memory/left-off.ts); this server validates and writes them. Expired records go now.
+  const leftOff = new LeftOffStore({
+    dir: leftOffDir(stateDir()),
+    days: ctx.config.leftOffDays ?? LEFT_OFF_DAYS,
+    enabled: ctx.config.leftOff !== false,
+    terminal: (id) => ctx.terminals.get(id),
+  });
+  await leftOff.sweep().catch((error) => console.error(`mirador: expired left-off records could not be removed: ${(error as NodeJS.ErrnoException)?.code ?? 'error'}`));
+  ctx.onShutdown(() => leftOff.flush());
+
   const paths = herdrPaths(runtimeDir());
   try {
-    const socket = await listenForReports(paths.socketPath, (line) => store.receive(line));
+    // A left-off line is read by its own store; every other line is an attention report (4096 bytes at most).
+    const socket = await listenForReports(paths.socketPath, (line) => leftOff.receive(line) ?? store.receive(line), { maxLineBytes: LEFT_OFF_MAX_LINE_BYTES });
     ctx.onShutdown(async () => {
       socket.close();
       await rm(paths.socketPath, { force: true });
@@ -76,7 +89,7 @@ export const inboxRoutes: RouteModule = async (ctx) => {
     // kimi has none: its hooks live only in the user's own kimi config and plugins (src/agents/catalog.ts).
     const bridges = {
       pi: BRIDGE,
-      'claude-code': await prepareClaudeSettings(paths.dir, CLAUDE_HOOK),
+      'claude-code': await prepareClaudeSettings(paths.dir, CLAUDE_HOOK, process.execPath, { leftOff: ctx.config.leftOff !== false }),
       opencode: await prepareOpencodePlugin(paths.dir, OPENCODE_PLUGIN),
       antigravity: await prepareAgyHooks(paths.dir, AGY_HOOK),
     };
