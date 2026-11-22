@@ -74,6 +74,11 @@ function truncatedNotice(data) {
   return data.truncated ? el('p', { class: 'notice overview-warn', role: 'status' }, t('overview.truncated')) : null;
 }
 
+/** Engram did not answer, so what shows comes only from the local records (`engramUnavailable` of GET /api/overview and /api/overview/folder). */
+function engramDownNotice(data) {
+  return data.engramUnavailable ? el('p', { class: 'notice overview-warn', role: 'status' }, t('overview.engramDown')) : null;
+}
+
 function startButton(folder) {
   return el(
     'button',
@@ -326,6 +331,7 @@ const workspaceView = {
     return [
       workspace ? missionCard(workspace) : null,
       truncatedNotice(data),
+      engramDownNotice(data),
       summaryCard(data, selection.ws),
       el(
         'section',
@@ -537,7 +543,7 @@ async function leftOff({ selection, date }) {
     if (call && folder.reason?.status === 503) return [call];
     throw folder.reason;
   }
-  return [call, truncatedNotice(folder.value), leftOffCard(folder.value, selection)].filter(Boolean);
+  return [call, truncatedNotice(folder.value), engramDownNotice(folder.value), leftOffCard(folder.value, selection)].filter(Boolean);
 }
 
 const isFolder = (selection) => selection !== null && selection.rel !== '';

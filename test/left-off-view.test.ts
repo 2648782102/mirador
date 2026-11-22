@@ -336,3 +336,30 @@ test('plain mode\'s record has Forget: it asks first, then DELETE /api/folder/le
   const bare = plainLeftOffView({ api: async () => answer, el, t: (key: string) => key, isPlain: () => true });
   assert.deepEqual(buttons((await bare.render({ selection: { ws: 'dev', rel: 'app' }, date: '2026-11-12', setHeading: () => {} }))[0]), []);
 });
+
+/** The source of a top-level declaration of public/features/overview.js (a browser module Node cannot import), up to its closing line. */
+function overviewDeclaration(head: string, close = '\n}\n'): string {
+  const source = readFileSync(fileURLToPath(new URL('../public/features/overview.js', import.meta.url)), 'utf8');
+  const start = source.indexOf(`\n${head}`);
+  assert.ok(start >= 0, `${head} is missing from overview.js`);
+  return source.slice(start, source.indexOf(close, start) + close.length);
+}
+const overviewFunction = (name: string) => overviewDeclaration(`function ${name}(`);
+
+test('an answer with engramUnavailable shows a notice that Engram is not responding, above the rows and the block; without it, none', () => {
+  for (const language of ['en', 'es']) {
+    const t = (key: string, vars?: Record<string, unknown>) => translate(language, key, vars);
+    // The function as overview.js has it, run with the test's el and t.
+    const engramDownNotice = new Function('el', 't', `${overviewFunction('engramDownNotice')}\nreturn engramDownNotice;`)(el, t);
+    const shown = engramDownNotice({ engramUnavailable: true, rows: [] }) as Node;
+    assert.deepEqual(shown, el('p', { class: 'notice overview-warn', role: 'status' }, t('overview.engramDown')), 'the same notice style as overview.truncated');
+    assert.match(text(shown), language === 'en' ? /^Engram is not responding, so this shows only Mirador's local records of Claude Code\.$/ : /^Engram no responde, así que esto muestra solo los registros locales de Mirador de Claude Code\.$/);
+    assert.equal(engramDownNotice({ rows: [] }), null, 'no flag: no notice');
+    assert.equal(engramDownNotice({ engramUnavailable: false, rows: [] }), null);
+  }
+  // Both views put it under the truncated notice and above what they show from the records.
+  const workspace = overviewDeclaration('const workspaceView = {', '\n};\n');
+  assert.match(workspace, /truncatedNotice\(data\),\s*engramDownNotice\(data\),\s*summaryCard\(data, selection\.ws\),/);
+  assert.match(workspace, /data\.rows\.map\(\(row\) => rowView\(row, selection\.ws, textOptions\)\)/, 'the rows still show under it');
+  assert.match(overviewDeclaration('async function leftOff('), /\[call, truncatedNotice\(folder\.value\), engramDownNotice\(folder\.value\), leftOffCard\(folder\.value, selection\)\]/);
+});
