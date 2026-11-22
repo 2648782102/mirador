@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BROWSERS, MAC_APPS } from '../src/doctor.ts';
 import { scratchBase } from './helpers/scratch.ts';
+import { logLines as lines, waitForLogLines } from './helpers/log-lines.ts';
 
 const APP_DIR = fileURLToPath(new URL('..', import.meta.url));
 const LAUNCHER = join(APP_DIR, 'bin', 'mirador');
@@ -153,11 +154,8 @@ function isAlive(pid: number): boolean {
 }
 
 /** Arguments of each stub chromium call, one line per call. */
-async function browserCalls(box: Sandbox, count: number): Promise<string[]> {
-  return waitFor(async () => {
-    const lines = (await readFile(box.browserLog, 'utf8')).trim().split('\n');
-    return lines.length >= count ? lines : undefined;
-  });
+function browserCalls(box: Sandbox, count: number): Promise<string[]> {
+  return waitForLogLines(box.browserLog, count, 8000);
 }
 
 async function statePid(box: Sandbox): Promise<number> {
@@ -214,10 +212,6 @@ test('stop stops the server', { skip: LINUX_HOST }, async () => {
   assert.equal(status.code, 1);
   assert.equal(status.stdout, 'mirador: not running\n');
 });
-
-async function lines(path: string): Promise<string[]> {
-  return (await readFile(path, 'utf8').catch(() => '')).split('\n').filter(Boolean);
-}
 
 async function stopServer(box: Sandbox, pid: number): Promise<void> {
   assert.equal((await run(box, 'stop')).stdout, 'mirador: stopped\n');
