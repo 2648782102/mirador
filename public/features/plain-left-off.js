@@ -5,7 +5,8 @@
 // without gentle-shell, pi or Engram. It sits where gentle-deck shows the Engram "Dónde quedó"
 // (public/features/overview.js, a 'memory' extra plain mode leaves out), with the same view id and
 // label, so a folder still opens on it. No imports: public/features/workspaces.js passes api, el,
-// t, confirm and refresh, and test/plain-left-off.test.ts renders it in Node with a fake el.
+// t, confirm and refresh, and test/plain-left-off.test.ts renders it in Node with a fake el (and
+// clicks Forget once through the real /core.js el).
 // The record's block has Forget (DELETE /api/folder/left-off), asked first with `confirm`, then
 // the panel reloads (`refresh`); without both, no Forget.
 
@@ -87,7 +88,7 @@ export function plainLeftOffView({ api, el, t, isPlain, confirm, refresh }) {
   }
 
   // Forget, as gentle-deck's block: asks first, removes the record, reloads the panel. A failure
-  // shows in place of the button's line.
+  // shows in place of the button's line. `onclick` goes to el, which adds it as a click listener (/core.js).
   function forgetButton(selection) {
     if (!confirm || !refresh) return null;
     let busy = false;

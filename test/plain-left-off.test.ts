@@ -1,10 +1,12 @@
 // Plain mode's "Where it left off" for a folder
 // (public/features/plain-left-off.js): branch, last commit, changed files, the recent log and
 // NOTES.md, from GET /api/folder/git only, so no Engram route is called and nothing fails.
-// The view takes api, el and t as arguments: here a fake DOM of plain objects renders it in Node.
+// The view takes api, el and t as arguments: here a fake DOM of plain objects renders it in Node,
+// and the record's Forget is clicked once through the real /core.js el on a small DOM stand-in.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { registerHooks } from 'node:module';
 import { changeKind, plainLeftOffView, shortDate } from '../public/features/plain-left-off.js';
 import { translate } from '../public/i18n.js';
 
@@ -160,4 +162,72 @@ test('the workspaces feature registers the view, plain only, and it calls no Eng
   assert.doesNotMatch(viewJs, /\/api\/(overview|summary|activity|memory|inbox)/);
   assert.doesNotMatch(viewJs, /^import /m, 'no browser import: tests load it in Node');
   assert.doesNotMatch(viewJs, /innerHTML|insertAdjacentHTML/);
+});
+
+/* ---------- The real /core.js el, on a DOM stand-in whose elements are EventTargets ---------- */
+
+const publicDir = new URL('../public/', import.meta.url);
+// core.js imports '/i18n.js' and '/theme-model.js' by their browser paths: here, public/'s files.
+registerHooks({
+  resolve(specifier, context, next) {
+    if (specifier.startsWith('/') && context.parentURL?.startsWith(publicDir.href)) return { url: new URL(specifier.slice(1), publicDir).href, shortCircuit: true };
+    return next(specifier, context);
+  },
+});
+
+/** An element as far as el() and the view touch it; events go through Node's own EventTarget. */
+class DomElement extends EventTarget {
+  readonly tagName: string;
+  className = '';
+  readonly attributes = new Map<string, string>();
+  childNodes: Array<DomElement | string> = [];
+  readonly dataset: Record<string, string> = {};
+  constructor(tag: string) {
+    super();
+    this.tagName = tag;
+  }
+  setAttribute(name: string, value: unknown) { this.attributes.set(name, String(value)); }
+  getAttribute(name: string) { return this.attributes.get(name) ?? null; }
+  append(...nodes: Array<DomElement | string>) { this.childNodes.push(...nodes); }
+  replaceChildren(...nodes: Array<DomElement | string>) { this.childNodes = [...nodes]; }
+  get textContent(): string { return this.childNodes.map((child) => (typeof child === 'string' ? child : child.textContent)).join(''); }
+}
+const domButtons = (node: DomElement | string): DomElement[] =>
+  typeof node === 'string' ? [] : [...(node.tagName === 'button' ? [node] : []), ...node.childNodes.flatMap(domButtons)];
+/** Lets the click's async handler run to its end (each await is one turn). */
+const settle = async () => { for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve)); };
+
+test('plain mode\'s Forget works with the real /core.js el: a dispatched click asks first, then deletes and reloads', async () => {
+  // core.js marks the page's theme when it loads.
+  (globalThis as any).document = { documentElement: new DomElement('html'), createElement: (tag: string) => new DomElement(tag) };
+  const core = await import(new URL('core.js', publicDir).href);
+  const answer = {
+    cwd: '/work/dev/app',
+    git: { available: false, reason: 'not_repo' },
+    notes: null,
+    leftOff: { source: 'claude-code', from: 'lastMessage', at: '2026-11-12T10:00:00.000Z', text: 'Done.', lastUserMessage: null },
+  };
+  for (const sure of [true, false]) {
+    const calls: string[] = [];
+    let asked = 0;
+    let refreshed = 0;
+    const view = plainLeftOffView({
+      api: async (method: string, path: string) => (calls.push(`${method} ${path}`), method === 'GET' ? answer : null),
+      el: core.el,
+      t: (key: string, vars?: Record<string, unknown>) => translate('en', key, vars),
+      isPlain: () => true,
+      confirm: async () => (asked++, sure),
+      refresh: () => refreshed++,
+    });
+    const nodes = (await view.render({ selection: { ws: 'dev', rel: 'a b' }, date: '2026-11-12', setHeading: () => {} })) as DomElement[];
+    const [forget] = domButtons(nodes[0]);
+    assert.equal(forget?.textContent, 'Forget');
+    assert.equal(forget.getAttribute('onclick'), null, 'a listener, never an onclick attribute');
+    forget.dispatchEvent(new Event('click'));
+    await settle();
+    assert.equal(asked, 1, `the click asks first (confirmed: ${sure})`);
+    assert.deepEqual(calls, sure ? ['GET /api/folder/git?ws=dev&rel=a+b', 'DELETE /api/folder/left-off?ws=dev&rel=a+b'] : ['GET /api/folder/git?ws=dev&rel=a+b'], `confirmed: ${sure}`);
+    assert.equal(refreshed, sure ? 1 : 0);
+  }
+  delete (globalThis as any).document;
 });

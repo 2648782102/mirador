@@ -178,7 +178,7 @@ setInterval(() => {
 
 before(async () => {
   scratch = await realpath(await mkdtemp(join(scratchBase(), 'mirador-left-off-')));
-  for (const rel of ['alpha', 'beta', 'gamma', 'delta', 'epsilon']) await mkdir(join(scratch, 'root', rel), { recursive: true });
+  for (const rel of ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta']) await mkdir(join(scratch, 'root', rel), { recursive: true });
   await mkdir(join(scratch, 'other', 'one'), { recursive: true });
   await mkdir(home(), { recursive: true });
   await mkdir(join(scratch, 'bin'), { recursive: true });
@@ -212,10 +212,11 @@ after(async () => {
   await rm(scratch, { recursive: true, force: true });
 });
 
-const open = async (rel: string, kind = 'agent') => {
+/** Opens a terminal in `rel`; an agent is the catalog's `agent` (claude-code by default), or the configured agentCommand for null. */
+const open = async (rel: string, kind = 'agent', agent: string | null = 'claude-code') => {
   // After a restart the agents it reopens come first (409 launches_running until they are open).
   const response = await waitFor(async () => {
-    const answer = await api('POST', '/api/terminals', { ws: 'dev', rel, kind, cols: 90, rows: 33, ...(kind === 'agent' ? { agent: 'claude-code' } : {}) });
+    const answer = await api('POST', '/api/terminals', { ws: 'dev', rel, kind, cols: 90, rows: 33, ...(kind === 'agent' && agent ? { agent } : {}) });
     return answer.status === 409 ? undefined : answer;
   }, 15_000);
   assert.equal(response.status, 201);
@@ -400,7 +401,7 @@ test('the workspace summary rows use the record too: newest wins per row, and En
   assert.equal(down.body.engramUnavailable, true);
   const byRel = (body: any) => Object.fromEntries(body.rows.map((row: any) => [row.rel, row]));
   const fromRecord = byRel(down.body);
-  assert.deepEqual(Object.keys(fromRecord).sort(), ['alpha', 'beta', 'delta', 'epsilon', 'gamma']);
+  assert.deepEqual(Object.keys(fromRecord).sort(), ['alpha', 'beta', 'delta', 'epsilon', 'gamma', 'zeta']);
   assert.deepEqual([fromRecord.alpha.leftOff.summary.source, fromRecord.alpha.leftOff.summary.from, fromRecord.alpha.leftOff.summary.nextSteps], ['claude-code', 'lastMessage', '- write the docs']);
   assert.ok(fromRecord.alpha.leftOff.summary.lastUserMessage.startsWith('Look at this:') && fromRecord.alpha.leftOff.summary.lastUserMessage.length <= 2001, 'the user\'s message, clipped like the row\'s excerpt');
   assert.deepEqual([fromRecord.beta.leftOff.summary.from, fromRecord.beta.leftOff.summary.nextSteps], ['compactSummary', '- resume the migration']);
@@ -468,6 +469,57 @@ test('forgetting a folder\'s sleeping Claude Code agent removes its record', asy
   const { [path.slice(leftOffDir().length + 1)]: _gone, ...rest } = before;
   assert.deepEqual(await snapshot(), rest, 'every other record unchanged');
   assert.equal((await api('DELETE', `/api/terminals/sleeping/${sleeper.id}`)).status, 404, 'PRESERVE: forgetting it again is 404 as before');
+});
+
+// A launch-only agent of the catalog (no hooks, no bridge): it records its argv like the fake claude and stays running.
+const FAKE_CODEX = `#!${process.execPath}
+const { renameSync, writeFileSync } = require('node:fs');
+const file = process.env.HOME + '/args-' + process.env.HERDR_PANE_ID;
+writeFileSync(file + '.tmp', ['codex', ...process.argv.slice(2)].map((word) => word + '\\n').join(''));
+renameSync(file + '.tmp', file);
+setInterval(() => {}, 1000);
+`;
+
+test('forgetting a sleeping Claude Code agent started as the configured agentCommand removes its record; forgetting a non-Claude sleeper leaves it', async () => {
+  await writeFile(join(scratch, 'bin', 'codex'), FAKE_CODEX, { mode: 0o755 });
+  await writeFile(join(scratch, 'gentle-ai', 'state.json'), JSON.stringify({ installed_agents: ['claude-code', 'codex'] }));
+  await stop();
+  await start({ agentCommand: 'claude' });
+  // Claude Code as the configured agentCommand: opened without an id, it still gets the hooks and writes the record.
+  const configured = await open('zeta', 'agent', null);
+  assert.match(await readFile(join(home(), `args-${configured.id}`), 'utf8'), /^claude\n--settings\n/, 'the configured claude gets the hooks');
+  await fire(configured.id, 'Stop', { session_id: S3, last_assistant_message: 'Zeta done.' });
+  const { path } = await waitFor(async () => {
+    const found = await recordOf('zeta');
+    return found?.record.lastMessage ? found : undefined;
+  });
+  // A non-Claude agent in the same folder, finished too (an attention report, as its turn's end would say).
+  const codex = await open('zeta', 'agent', 'codex');
+  const finished = JSON.stringify({ v: 1, cmd: 'report-metadata', pane: codex.id, source: 'mirador:attention', seq: Date.now() + 1, ttlMs: null, tokens: { finished: 'probe' }, clear: ['blocked', 'prompt'] });
+  await sendLines([finished]);
+  const stateOf = async (id: string) => ((await (await api('GET', '/api/terminals')).json()) as Array<{ id: string; agentState?: string }>).find((t) => t.id === id)?.agentState;
+  await waitFor(async () => ((await stateOf(codex.id)) === 'finished' && (await stateOf(configured.id)) === 'finished' ? true : undefined));
+  // Both sleep across a restart.
+  await stop();
+  await start({ agentCommand: 'claude' });
+  const sleepers = await waitFor(async () => {
+    const { agents } = (await (await api('GET', '/api/terminals/sleeping')).json()) as { agents: Array<{ id: string; rel: string; agent: string | null }> };
+    const zeta = agents.filter((agent) => agent.rel === 'zeta');
+    return zeta.length === 2 ? zeta : undefined;
+  });
+  const claudeSleeper = sleepers.find((agent) => agent.agent === null)!;
+  const codexSleeper = sleepers.find((agent) => agent.agent === 'codex')!;
+  assert.ok(claudeSleeper && codexSleeper, JSON.stringify(sleepers));
+
+  const before = await snapshot();
+  assert.equal((await api('DELETE', `/api/terminals/sleeping/${codexSleeper.id}`)).status, 204);
+  assert.deepEqual(await snapshot(), before, 'a non-Claude sleeper\'s forget leaves every record unchanged, the folder\'s included');
+
+  assert.equal((await api('DELETE', `/api/terminals/sleeping/${claudeSleeper.id}`)).status, 204);
+  assert.equal(await exists(path), false, 'the configured Claude Code sleeper\'s record is gone');
+  const { [path.slice(leftOffDir().length + 1)]: _gone, ...rest } = before;
+  assert.deepEqual(await snapshot(), rest, 'every other record unchanged');
+  assert.equal((await api('DELETE', `/api/terminals/sleeping/${claudeSleeper.id}`)).status, 404, 'PRESERVE: forgetting it again is 404 as before');
 });
 
 test('removing a workspace removes its left-off folder and nothing else; its summary keeps the Engram-down 503 without records', async () => {
