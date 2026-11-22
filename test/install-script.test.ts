@@ -1,12 +1,12 @@
 // ./install.sh checks the machine, prints how to install what is
 // missing without installing it, then runs pnpm install, creates the config only when there is
 // none, runs pnpm run doctor and links the launcher. Every run gets a scratch HOME, XDG dirs, TMPDIR,
-// os-release and a PATH made of stubs plus a mirror of the system bin folder without the tools
-// the script checks or must never run (pnpm, node, compilers, sudo, package managers), so no
-// test installs anything or reads the real home.
+// os-release and a PATH made of stubs, the network barrier's fake curl and wget, then a mirror of the
+// system bin folder without the tools the script checks or must never run (pnpm, node, compilers, sudo,
+// package managers, mise), so no test installs anything, reaches the network or reads the real home.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { access, chmod, copyFile, mkdir, mkdtemp, readdir, readFile, readlink, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { createServer as createHttpServer, type Server } from 'node:http';
 import { createServer } from 'node:net';
@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BROWSERS } from '../src/doctor.ts';
-import { assertInstallerSandbox } from './helpers/installer-sandbox.ts';
+import { assertInstallerSandbox, writeNetworkBarrier } from './helpers/installer-sandbox.ts';
 
 const APP_DIR = fileURLToPath(new URL('..', import.meta.url));
 const SCRIPT = join(APP_DIR, 'install.sh');
@@ -42,6 +42,8 @@ const BUILD_LINK = 'https://github.com/nodejs/node-gyp#on-unix';
 let scratch: string;
 let appDir: string;
 let mirror: string;
+/** Fake curl and wget that fail instead of reaching the network (writeNetworkBarrier); mise stays hidden. */
+let barrier: string;
 let boxes = 0;
 /** A stand-in Engram on 127.0.0.1 that answers anything, and a port where nothing answers. */
 let engram: Server;
@@ -123,7 +125,7 @@ async function box(options: Options = {}): Promise<Box> {
   if (options.osRelease !== undefined) await writeFile(osRelease, options.osRelease);
   const env: NodeJS.ProcessEnv = {
     HOME: home,
-    PATH: options.localBin === false ? `${stubs}:${mirror}` : `${stubs}:${mirror}:${join(home, '.local', 'bin')}`,
+    PATH: options.localBin === false ? `${stubs}:${barrier}:${mirror}` : `${stubs}:${barrier}:${mirror}:${join(home, '.local', 'bin')}`,
     TMPDIR: join(dir, 'tmp'),
     XDG_RUNTIME_DIR: join(dir, 'run'),
     XDG_STATE_HOME: join(dir, 'state'),
@@ -188,6 +190,25 @@ before(async () => {
       await symlink(join(folder, name), join(mirror, name)).catch(() => {});
     }
   }
+  // No fake mise: install.sh's Node hint changes when mise is on PATH, so it stays hidden from the mirror.
+  barrier = await writeNetworkBarrier(join(scratch, 'barrier'), ['curl', 'wget']);
+});
+
+/** Runs `script` with sh in the box's folder and env; not an installer run. */
+function sh(b: Box, script: string): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    execFile('/bin/sh', ['-c', script], { cwd: b.dir, env: b.env }, (error, stdout, stderr) => resolve({ code: error ? (typeof error.code === 'number' ? error.code : null) : 0, stdout, stderr }));
+  });
+}
+
+test("the box's PATH finds curl and wget in the network barrier and no mise, and a curl stub of the test's own wins over it", async () => {
+  const b = await box();
+  const found = await sh(b, 'for tool in mise curl wget; do command -v "$tool" || echo "no $tool"; done');
+  assert.equal(found.stdout, `no mise\n${join(barrier, 'curl')}\n${join(barrier, 'wget')}\n`);
+  assert.deepEqual(await sh(b, 'wget https://example.invalid'), { code: 97, stdout: '', stderr: "mirador test sandbox: 'wget' is blocked here, installer tests must not reach the network\n" });
+  const stubbed = await box({ tools: ['node', 'pnpm', 'python3', 'make', 'g++', 'curl'] });
+  assert.deepEqual(await sh(stubbed, 'command -v curl; curl https://example.invalid'), { code: 0, stdout: `${join(stubbed.stubs, 'curl')}\n`, stderr: '' });
+  assert.deepEqual(await readdir(b.home), []);
 });
 
 after(async () => {
