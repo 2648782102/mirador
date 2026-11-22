@@ -22,6 +22,14 @@ Planned for 0.2.0.
   validates and writes it (`~/.local/state/mirador/left-off/`, files 0600). It is plaintext on disk, never sent
   anywhere and never logged. Records are removed after 30 days, or after the days set in the new config key
   `leftOffDays`; `leftOff: false` turns the capture off. Mirador does not read Claude Code's configuration.
+- The groundwork for installing on Linux without compiling. A release workflow builds a prebuilt archive for
+  Linux x64 and arm64 (the official Node 24, Mirador's TypeScript sources as they are, and production
+  `node_modules` with `node-pty` built for glibc 2.28), with `SHA256SUMS` and a build-provenance attestation, and
+  attaches them to a draft release that a maintainer reviews and publishes. `scripts/bootstrap.sh` installs such
+  a release once one is pinned in it, checking the archive against the sha256 written in the script; until then,
+  and on macOS, it installs from source as before. It never overwrites or deletes a git clone in
+  `~/.local/share/mirador`, and it checks for no updates. `bin/mirador` runs the Node bundled in a prebuilt
+  release before any other.
 
 ### Changed
 
@@ -39,6 +47,7 @@ Planned for 0.2.0.
   the full mode's night shift and **Mejorar con IA** send to Claude, and says that `bin/herdr-shim` is a gentle-shell compatibility layer with no relation to the Herdr product.
 - `docs/security.md` explains how to open Mirador from another machine through an `ssh -L` tunnel, and its risks.
   The server still listens on `127.0.0.1` only.
+- `docs/releasing.md` tells maintainers how to cut a release, review its draft and pin it in `scripts/bootstrap.sh`.
 
 ## [0.1.0] - 2026-11-20
 

@@ -5,6 +5,8 @@
 // install.sh is a stub that records where it ran and with which arguments; nothing touches the
 // network, the real home or the real install.sh. The network barrier's fake mise, curl and wget come
 // right after the stubs on PATH, before the system's.
+// These tests cover the install from source, so they run a copy of the script with no release pinned,
+// whatever main pins; test/bootstrap-prebuilt.test.ts covers the prebuilt release.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
@@ -14,12 +16,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertInstallerSandbox, writeNetworkBarrier } from './helpers/installer-sandbox.ts';
+import { withPins } from './helpers/bootstrap-pins.ts';
 
-const SCRIPT = fileURLToPath(new URL('../scripts/bootstrap.sh', import.meta.url));
+const SOURCE = fileURLToPath(new URL('../scripts/bootstrap.sh', import.meta.url));
 
 let scratch: string;
 /** The fake mise, curl and wget that fail instead of reaching the network (writeNetworkBarrier). */
 let barrier: string;
+let SCRIPT: string;
 let boxes = 0;
 
 const GIT_ENV = { GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.invalid', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.invalid' };
@@ -99,6 +103,8 @@ const installCalls = async (b: Box) => (await readFile(b.installLog, 'utf8').cat
 before(async () => {
   scratch = await realpath(await mkdtemp(join(tmpdir(), 'mirador-bootstrap-')));
   barrier = await writeNetworkBarrier(join(scratch, 'barrier'));
+  SCRIPT = join(scratch, 'bootstrap.sh');
+  await writeFile(SCRIPT, withPins(await readFile(SOURCE, 'utf8')));
 });
 
 /** Runs `script` with sh in the box's folder and env; not an installer run. */
