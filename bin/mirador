@@ -16,9 +16,11 @@ os="$(uname -s)"
 wsl=0
 [ "$os" = Linux ] && uname -r | grep -qi microsoft && wsl=1
 
-# Node on PATH, else the one mise manages (a launch from the app menu may not have mise's PATH).
+# The Node a prebuilt release bundles beside bin/ (scripts/bootstrap.sh installs one), else Node on PATH,
+# else the one mise manages (a launch from the app menu may not have mise's PATH).
 find_node() {
   local found shim="$HOME/.local/share/mise/shims/node"
+  [ -x "$app_dir/node/bin/node" ] && echo "$app_dir/node/bin/node" && return
   command -v node && return
   found="$(mise which node 2>/dev/null)" && [ -n "$found" ] && echo "$found" && return
   [ -x "$shim" ] && echo "$shim"
