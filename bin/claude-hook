@@ -13,6 +13,7 @@
 //   UserPromptSubmit  prompt (as received: pasted text already expanded in place)
 //   Stop              last_assistant_message
 //   PostCompact       compact_summary (no attention report)
+//   SessionEnd        reason, as `reason` instead of `text` (no attention report; the server adds the time)
 // The server validates and stores it; this script writes nothing. `--no-left-off` (config
 // `leftOff: false`) sends the attention report only.
 // Like bin/herdr-shim it must never get in the agent's way: it prints nothing, always exits 0 and
@@ -28,6 +29,8 @@ const TRUNCATED_MARK = '…';
 const MAX_LEFT_OFF_LINE_BYTES = 128 * 1024;
 /** Which field of which event Mirador keeps for "where it left off". */
 const LEFT_OFF_FIELDS = { UserPromptSubmit: 'prompt', Stop: 'last_assistant_message', PostCompact: 'compact_summary' };
+/** As END_REASON in src/memory/left-off.ts: SessionEnd's reason (clear, logout, prompt_input_exit, other, …). */
+const END_REASON = /^[a-z][a-z0-9_]{0,63}$/;
 /** Mirador refuses a token value over 512 characters, so the message is cut before that. */
 const MAX_MESSAGE = 500;
 const TIMEOUT_MS = 1000;
@@ -61,10 +64,14 @@ function bound(text) {
 
 /** The left-off line for `event`, or null when it carries no such field or no valid session. */
 function leftOffOf(event, pane) {
+  if (typeof event.session_id !== 'string' || !SESSION_ID.test(event.session_id)) return null;
+  if (event.hook_event_name === 'SessionEnd') {
+    if (typeof event.reason !== 'string' || !END_REASON.test(event.reason)) return null;
+    return JSON.stringify({ v: 1, cmd: 'left-off', pane, agent: 'claude-code', event: 'SessionEnd', session: event.session_id, reason: event.reason }) + '\n';
+  }
   const field = Object.hasOwn(LEFT_OFF_FIELDS, event.hook_event_name) ? LEFT_OFF_FIELDS[event.hook_event_name] : null;
   const value = field ? event[field] : undefined;
   if (typeof value !== 'string' || !value.trim()) return null;
-  if (typeof event.session_id !== 'string' || !SESSION_ID.test(event.session_id)) return null;
   const { text, truncated } = bound(value);
   const line = JSON.stringify({ v: 1, cmd: 'left-off', pane, agent: 'claude-code', event: event.hook_event_name, session: event.session_id, text, ...(truncated ? { truncated } : {}) }) + '\n';
   return Buffer.byteLength(line) <= MAX_LEFT_OFF_LINE_BYTES ? line : null;

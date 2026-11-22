@@ -155,7 +155,7 @@ test('porcelain codes read as words, and dates keep the author\'s clock', () => 
 
 test('the workspaces feature registers the view, plain only, and it calls no Engram route', () => {
   const workspacesJs = readFileSync('public/features/workspaces.js', 'utf8');
-  assert.match(workspacesJs, /registerPanelView\(plainLeftOffView\(\{ api, el, t, isPlain: \(\) => modeOf\(state\.config\) === 'plain' \}\)\)/);
+  assert.match(workspacesJs, /registerPanelView\(plainLeftOffView\(\{ api, el, t, isPlain: \(\) => modeOf\(state\.config\) === 'plain', confirm: confirmDialog, refresh: refreshPanel \}\)\)/);
   const viewJs = readFileSync('public/features/plain-left-off.js', 'utf8');
   assert.doesNotMatch(viewJs, /\/api\/(overview|summary|activity|memory|inbox)/);
   assert.doesNotMatch(viewJs, /^import /m, 'no browser import: tests load it in Node');

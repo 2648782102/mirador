@@ -10,7 +10,7 @@
 // shift reads, and lets the user edit it. The mission and each row's next steps show their first
 // lines, with "Ver más" when there is more (clipBlock).
 import { api, el, errorText, getLanguage, select, setWorkspaces, state, t, workspaceById } from '/core.js';
-import { openDialog } from '/dialog.js';
+import { confirmDialog, openDialog, showAlert } from '/dialog.js';
 import { plural } from '/i18n.js';
 import { icon } from '/icons.js';
 import { CLIP_LINES, clipOverflows, clipToggle, leftOffLayout, pageCount, pageKey, pageOffset, pagerView, pickCall, sourceKey, turnPage, waitedFor } from '/leftoff-model.js';
@@ -72,6 +72,11 @@ function dayOf(at) {
 
 function truncatedNotice(data) {
   return data.truncated ? el('p', { class: 'notice overview-warn', role: 'status' }, t('overview.truncated')) : null;
+}
+
+/** Engram did not answer, so what shows comes only from the local records (`engramUnavailable` of GET /api/overview and /api/overview/folder). */
+function engramDownNotice(data) {
+  return data.engramUnavailable ? el('p', { class: 'notice overview-warn', role: 'status' }, t('overview.engramDown')) : null;
 }
 
 function startButton(folder) {
@@ -297,6 +302,10 @@ function rowView(row, ws, textOptions) {
     }
     // A free-form summary has no sections: its text, clipped by the server.
     if (summary.excerpt) body.push(el('div', { class: 'overview-next' }, panel.markMemory(renderMarkdown(summary.excerpt, textOptions))));
+    // A local record where Claude Code has not answered yet: the user's last message, as plain text.
+    if (!summary.goal && !summary.nextSteps && !summary.excerpt && summary.lastUserMessage) {
+      body.push(el('p', { class: 'overview-since' }, `${t('overview.lastUserMessage')}: `, summary.lastUserMessage));
+    }
     body.push(sinceLine(row.leftOff));
   } else if (memory) {
     body.push(el('p', { class: 'overview-since' }, t('overview.latestMemory', { title: memory.title })));
@@ -322,6 +331,7 @@ const workspaceView = {
     return [
       workspace ? missionCard(workspace) : null,
       truncatedNotice(data),
+      engramDownNotice(data),
       summaryCard(data, selection.ws),
       el(
         'section',
@@ -469,6 +479,30 @@ function pagedBox(content, label, kind) {
   return [box, pager];
 }
 
+/**
+ * Forget, on a block from the local record: asks first (focus starts on Cancel, as the sleeping
+ * agents' Olvidar), removes the record (DELETE /api/folder/left-off) and reloads the panel, which then
+ * shows Engram's summary or the empty state.
+ */
+function forgetButton(selection) {
+  const button = el('button', { type: 'button', class: 'btn sm ghost leftoff-forget', title: t('overview.forgetHint') }, t('overview.forget'));
+  button.addEventListener('click', async () => {
+    if (button.getAttribute('aria-busy') === 'true') return;
+    const sure = await confirmDialog({ title: t('overview.forgetTitle'), message: t('overview.forgetConfirm'), confirmLabel: t('overview.forget'), cancelLabel: t('overview.cancel'), danger: true });
+    if (!sure) return;
+    button.setAttribute('aria-busy', 'true');
+    try {
+      await api('DELETE', `/api/folder/left-off?${new URLSearchParams({ ws: selection.ws, rel: selection.rel })}`);
+      panel.refreshPanel();
+    } catch (error) {
+      showAlert(t('overview.forgetFailed', { error: errorText(error) }));
+    } finally {
+      button.removeAttribute('aria-busy');
+    }
+  });
+  return button;
+}
+
 function leftOffCard(data, selection) {
   const { row } = data;
   const { summary, memory } = row.leftOff;
@@ -492,6 +526,7 @@ function leftOffCard(data, selection) {
     layout.foot.lastWorked ? el('span', {}, t('overview.lastWorked', { when: whenLabel(row.lastAt, row.lastDay) })) : null,
     layout.foot.source ? el('span', {}, t(sourceKey(summary), { when: whenLabel(summary.at, dayOf(summary.at)) })) : null,
     layout.foot.since ? el('span', { class: 'leftoff-since' }, t('overview.since', { title: memory.title })) : null,
+    summary?.source === 'claude-code' ? forgetButton(selection) : null,
   ].filter(Boolean);
   if (foot.length) card.append(el('footer', { class: 'leftoff-foot' }, foot));
   return card;
@@ -508,7 +543,7 @@ async function leftOff({ selection, date }) {
     if (call && folder.reason?.status === 503) return [call];
     throw folder.reason;
   }
-  return [call, truncatedNotice(folder.value), leftOffCard(folder.value, selection)].filter(Boolean);
+  return [call, truncatedNotice(folder.value), engramDownNotice(folder.value), leftOffCard(folder.value, selection)].filter(Boolean);
 }
 
 const isFolder = (selection) => selection !== null && selection.rel !== '';

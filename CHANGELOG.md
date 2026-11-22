@@ -22,6 +22,12 @@ Planned for 0.2.0.
   validates and writes it (`~/.local/state/mirador/left-off/`, files 0600). It is plaintext on disk, never sent
   anywhere and never logged. Records are removed after 30 days, or after the days set in the new config key
   `leftOffDays`; `leftOff: false` turns the capture off. Mirador does not read Claude Code's configuration.
+- **Dónde quedó / Where it left off** shows the newer of Claude's final message and its compaction summary, not
+  always the final message; a block from the local record has **Olvidar / Forget**, which removes that record after
+  a confirmation, as forgetting the folder's sleeping Claude Code agent or removing the workspace now does too; the
+  record also keeps when and why the session ended (`SessionEnd`, stored only); and the workspace **Resumen /
+  Summary** rows use the record the same way as the folder view, answering from it when Engram is down, under a
+  notice that Engram is not responding.
 - The groundwork for installing on Linux without compiling. A release workflow builds a prebuilt archive for
   Linux x64 and arm64 (the official Node 24, Mirador's TypeScript sources as they are, and production
   `node_modules` with `node-pty` built for glibc 2.28), with `SHA256SUMS` and a build-provenance attestation, and

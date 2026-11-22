@@ -1,7 +1,9 @@
 // Probes of the local "where it left off" store's edges (src/memory/left-off.ts): the record path never
 // leaves the store folder, refused lines write nothing, the sweep removes only what expired and drops
-// empty folders, the attention report keeps its 4096-byte cap while only the socket's grows, and a tie
-// between Engram and the record goes to Engram. The end-to-end path is test/left-off-local.test.ts.
+// empty folders, the attention report keeps its 4096-byte cap while only the socket's grows, a tie
+// between Engram and the record goes to Engram, SessionEnd only marks its own session's record, and
+// Forget removes one record (or one workspace's) and nothing else. The end-to-end path is
+// test/left-off-local.test.ts.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
@@ -10,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { isAbsolute, join, relative, sep } from 'node:path';
 import { listenForReports } from '../src/attention/socket.ts';
 import { AttentionStore, MAX_LINE_BYTES } from '../src/attention/store.ts';
-import { LEFT_OFF_MAX_LINE_BYTES, LeftOffStore, recordFile, sweepLeftOff, type LeftOffRecord } from '../src/memory/left-off.ts';
+import { LEFT_OFF_MAX_LINE_BYTES, LeftOffStore, deleteLeftOff, deleteLeftOffWorkspace, recordFile, sweepLeftOff, type LeftOffRecord } from '../src/memory/left-off.ts';
 import { buildWorkspaceOverview, type OverviewFolder } from '../src/memory/overview.ts';
 import type { TerminalInfo } from '../src/terminals/registry.ts';
 import { waitFor } from './helpers/wait.ts';
@@ -70,7 +72,15 @@ test('rejected lines write nothing and leave the record byte-identical', () =>
       line({ text: 5 }),
       line({ text: '' }),
       line({ text: ' \n\t' }),
+      // SessionEnd carries a reason and no text; a reason goes with SessionEnd only.
       line({ event: 'SessionEnd' }),
+      line({ event: 'SessionEnd', reason: 'clear' }),
+      line({ event: 'SessionEnd', text: undefined }),
+      line({ event: 'SessionEnd', text: undefined, reason: 'Not A Reason' }),
+      line({ event: 'SessionEnd', text: undefined, reason: 'x'.repeat(65) }),
+      line({ event: 'SessionEnd', text: undefined, reason: 5 }),
+      line({ event: 'SessionEnd', text: undefined, reason: 'clear', truncated: true }),
+      line({ reason: 'clear' }),
       line({ agent: 'pi' }),
       line({ v: 2 }),
       line({ extra: true }),
@@ -90,6 +100,72 @@ test('rejected lines write nothing and leave the record byte-identical', () =>
     assert.equal(off.receive(line({ text: 'later' })), false);
     await off.flush();
     assert.deepEqual(await readFile(file), before.bytes);
+  }));
+
+test('SessionEnd stores the end time and reason on its own session\'s record only, and keeps its texts', () =>
+  scratch(async (dir) => {
+    const terminals = new Map([['a1', agent('a1')]]);
+    let now = Date.parse('2026-11-20T12:00:00.000Z');
+    const store = new LeftOffStore({ dir, days: 30, enabled: true, terminal: (id) => terminals.get(id), now: () => now });
+    const end = (fields: Record<string, unknown> = {}) => line({ event: 'SessionEnd', text: undefined, reason: 'prompt_input_exit', ...fields });
+    const file = recordFile(dir, 'dev', 'alpha');
+
+    // No record yet: an end writes nothing.
+    assert.equal(store.receive(end()), true);
+    await store.flush();
+    assert.deepEqual(await readdir(dir).catch(() => []), [], 'nothing written');
+
+    assert.equal(store.receive(line({ text: 'Done.' })), true);
+    await store.flush();
+    const texts = JSON.parse(await readFile(file, 'utf8'));
+    assert.equal(texts.endedAt, undefined, 'format v1 without an end: no endedAt or endReason');
+    assert.equal(texts.endReason, undefined);
+
+    // Another session's end leaves the record byte-identical.
+    const before = await readFile(file);
+    now += 60_000;
+    assert.equal(store.receive(end({ session: '7c1d9e3f-5a2b-4c8d-8e6f-1a0b2c3d4e5f' })), true);
+    await store.flush();
+    assert.deepEqual(await readFile(file), before);
+
+    now += 60_000;
+    assert.equal(store.receive(end()), true);
+    await store.flush();
+    const ended = JSON.parse(await readFile(file, 'utf8'));
+    assert.deepEqual(ended, { ...texts, at: '2026-11-20T12:02:00.000Z', endedAt: '2026-11-20T12:02:00.000Z', endReason: 'prompt_input_exit' }, 'the end, at the server\'s time; the texts as they were');
+
+    // The session goes on (a resumed session): a new text clears the end.
+    now += 60_000;
+    assert.equal(store.receive(line({ event: 'UserPromptSubmit', text: 'and now?' })), true);
+    await store.flush();
+    const resumed = JSON.parse(await readFile(file, 'utf8'));
+    assert.deepEqual([resumed.endedAt, resumed.endReason, resumed.lastMessage.text, resumed.lastUserMessage.text], [undefined, undefined, 'Done.', 'and now?']);
+  }));
+
+test('deleteLeftOff removes one folder\'s record and is idempotent; deleteLeftOffWorkspace removes one workspace\'s folder', () =>
+  scratch(async (dir) => {
+    const put = async (workspaceId: string, rel: string) => {
+      const file = recordFile(dir, workspaceId, rel);
+      await mkdir(join(file, '..'), { recursive: true });
+      await writeFile(file, `{"rel":${JSON.stringify(rel)}}`);
+      return file;
+    };
+    const alpha = await put('dev', 'alpha');
+    const beta = await put('dev', 'beta');
+    const other = await put('other', 'alpha');
+    const odd = await put('../x', 'alpha');
+    assert.equal(await deleteLeftOff(dir, 'dev', 'alpha'), true);
+    assert.equal(await deleteLeftOff(dir, 'dev', 'alpha'), false, 'again: nothing to remove, no error');
+    assert.equal(await deleteLeftOff(dir, 'nobody', '../../etc/passwd'), false);
+    const exists = (path: string) => stat(path).then(() => true, () => false);
+    assert.deepEqual([await exists(alpha), await exists(beta), await exists(other), await exists(odd)], [false, true, true, true]);
+
+    await deleteLeftOffWorkspace(dir, 'dev');
+    await deleteLeftOffWorkspace(dir, 'dev');
+    await deleteLeftOffWorkspace(dir, '..');
+    await deleteLeftOffWorkspace(dir, '../x');
+    assert.deepEqual([await exists(beta), await exists(other), await exists(odd), await exists(dir)], [false, true, false, true], 'only that workspace\'s folder; an odd id maps to its hashed folder');
+    assert.deepEqual(await readdir(dir), ['other']);
   }));
 
 test('the sweep removes expired records and stale stray json, keeps the rest and drops empty folders', () =>

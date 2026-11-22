@@ -1,10 +1,12 @@
 // The local "where it left off" record from Claude Code's hooks, rule by rule: what bin/claude-hook
 // sends for each event, the config keys `leftOff` and `leftOffDays`, how a record is read back and
 // expires, how the folder view picks the newest of Engram's summary and the record and names its
-// source, and how both modes show it (as text). The end-to-end path is test/left-off-local.test.ts.
+// source, which of the record's two agent texts is shown (the newer), SessionEnd's reason, Forget on
+// the block, and how both modes show it (as text). The end-to-end path is test/left-off-local.test.ts.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -74,8 +76,22 @@ test('the hook bounds a long text after paste expansion, and sends nothing for a
   assert.deepEqual(off.map((l) => l.cmd), ['report-metadata'], '--no-left-off: attention only');
 });
 
-test('the settings add PostCompact, and --no-left-off when the capture is off; nothing else changes', async () => {
-  assert.deepEqual(Object.keys(claudeSettings('hook').hooks), ['UserPromptSubmit', 'PostToolUse', 'Notification', 'Stop', 'PostCompact']);
+test('the hook sends SessionEnd\'s reason as a left-off line without text or attention report; a bad reason or --no-left-off sends nothing', async () => {
+  const ended = await hook(payload('SessionEnd', { reason: 'prompt_input_exit' }));
+  assert.deepEqual(ended, [{ v: 1, cmd: 'left-off', pane: 'pane-1', agent: 'claude-code', event: 'SessionEnd', session: ID, reason: 'prompt_input_exit' }]);
+  assert.deepEqual(leftOffLines(await hook(payload('SessionEnd', { reason: 'other' }))).map((line) => line.reason), ['other']);
+  for (const reason of [undefined, 42, '', 'Not A Reason', 'clear; rm -rf', 'x'.repeat(65), 'clear\n']) {
+    assert.deepEqual(await hook(payload('SessionEnd', reason === undefined ? {} : { reason })), [], `reason ${JSON.stringify(reason)}: nothing`);
+  }
+  assert.deepEqual(await hook(payload('SessionEnd', { session_id: '--help', reason: 'clear' })), [], 'no valid session: nothing');
+  assert.deepEqual(await hook(payload('SessionEnd', { reason: 'clear' }), ['--no-left-off']), [], '--no-left-off: nothing');
+  // PRESERVE: Stop still sends its attention report and its final message, with no reason.
+  const stopped = await hook(payload('Stop', { last_assistant_message: 'Done.', reason: 'clear' }));
+  assert.deepEqual(stopped.map((line) => [line.cmd, line.reason]), [['report-metadata', undefined], ['left-off', undefined]]);
+});
+
+test('the settings add PostCompact and SessionEnd, and --no-left-off when the capture is off; nothing else changes', async () => {
+  assert.deepEqual(Object.keys(claudeSettings('hook').hooks), ['UserPromptSubmit', 'PostToolUse', 'Notification', 'Stop', 'PostCompact', 'SessionEnd']);
   const dir = await mkdtemp(join(tmpdir(), 'mirador-left-off-settings-'));
   try {
     const on = JSON.parse(await readFile(await prepareClaudeSettings(dir, '/app/bin/claude-hook', '/usr/bin/node'), 'utf8'));
@@ -150,7 +166,20 @@ test('a record is read back while it is younger than its days, and an invalid on
     assert.equal(await readLeftOff(dir, 'dev', 'beta', { days: 30, now }), null, 'another folder: none');
     assert.notEqual(recordFile(dir, 'dev', 'alpha'), recordFile(dir, 'dev', 'beta'));
     assert.ok(recordFile(dir, '../x', 'a').startsWith(dir + '/'), 'an odd workspace id stays inside the folder');
-    for (const broken of ['not json', JSON.stringify({ ...record(), v: 2 }), JSON.stringify({ ...record(), lastMessage: { text: 5 } }), JSON.stringify({ ...record(), at: 'yesterday' })]) {
+    // Format v1 with the end of the session: endedAt and endReason, both or neither.
+    const ended = { ...record(), endedAt: '2026-10-28T12:30:00.000Z', endReason: 'prompt_input_exit' };
+    await writeFile(file, JSON.stringify(ended));
+    assert.deepEqual(await readLeftOff(dir, 'dev', 'alpha', { days: 30, now }), ended);
+    for (const broken of [
+      'not json',
+      JSON.stringify({ ...record(), v: 2 }),
+      JSON.stringify({ ...record(), lastMessage: { text: 5 } }),
+      JSON.stringify({ ...record(), at: 'yesterday' }),
+      JSON.stringify({ ...ended, endedAt: 'later' }),
+      JSON.stringify({ ...ended, endReason: 'Not A Reason' }),
+      JSON.stringify({ ...record(), endedAt: '2026-10-28T12:30:00.000Z' }),
+      JSON.stringify({ ...record(), endReason: 'other' }),
+    ]) {
       await writeFile(file, broken);
       assert.equal(await readLeftOff(dir, 'dev', 'alpha', { days: 30, now }), null, broken);
     }
@@ -195,6 +224,22 @@ test('Engram is compared with the time of the text the view shows, not the lates
   // A compaction summary newer than Engram's wins when there is no final message.
   const compacted = record({ lastMessage: null, compactSummary: { text: 'Compacted.', at: '2026-10-28T12:00:00.000Z' } });
   assert.equal(overview([engramSummary('2026-10-28 11:00:00')], compacted).leftOff.summary?.from, 'compactSummary');
+});
+
+test('the newer of the final message and the compaction summary is the text shown; a tie keeps the final message', () => {
+  const both = (lastAt: string, compactAt: string) =>
+    record({ lastMessage: { text: 'The final answer.', at: lastAt }, compactSummary: { text: '## Next Steps\n- from the compaction', at: compactAt } });
+  // A compaction after the final message wins, and is judged against Engram by its own time.
+  const later = overview([engramSummary('2026-10-28 11:00:00')], both('2026-10-28T10:00:00.000Z', '2026-10-28T12:00:00.000Z'));
+  assert.deepEqual(later.leftOff.summary, { at: '2026-10-28 12:00:00', goal: null, accomplished: null, nextSteps: '- from the compaction', source: 'claude-code', from: 'compactSummary', lastUserMessage: 'fix the tests' });
+  // A final message after the compaction wins.
+  const answered = overview([], both('2026-10-28T12:00:00.000Z', '2026-10-28T10:00:00.000Z'));
+  assert.deepEqual(answered.leftOff.summary, { at: '2026-10-28 12:00:00', goal: null, accomplished: null, nextSteps: null, excerpt: 'The final answer.', source: 'claude-code', from: 'lastMessage', lastUserMessage: 'fix the tests' });
+  // The same instant: the final message.
+  assert.equal(overview([], both('2026-10-28T12:00:00.000Z', '2026-10-28T12:00:00.000Z')).leftOff.summary?.from, 'lastMessage');
+  // An older compaction than Engram's summary loses even though it is the newer of the two texts.
+  const stale = overview([engramSummary('2026-10-28 13:00:00')], both('2026-10-28T10:00:00.000Z', '2026-10-28T12:00:00.000Z'));
+  assert.equal(stale.leftOff.summary?.goal, 'From Engram');
 });
 
 test('the layout reads the user\'s message first, and the foot names the source in both languages', () => {
@@ -244,4 +289,77 @@ test('plain mode shows the record above git, as text, with its source; one API c
   const view = plainLeftOffView({ api: async () => withoutRecord, el, t: (key: string) => key, isPlain: () => true });
   const nodes = (await view.render({ selection: { ws: 'dev', rel: 'app' }, date: '2026-11-12', setHeading: () => {} })) as Node[];
   assert.equal(nodes.length, 2, 'PRESERVE: no record, git and NOTES.md only');
+});
+
+const buttons = (node: Node | string): Node[] => (typeof node === 'string' ? [] : [...(node.tag === 'button' ? [node] : []), ...node.children.flatMap(buttons)]);
+
+test('plain mode\'s record has Forget: it asks first, then DELETE /api/folder/left-off and the view reloads', async () => {
+  const answer = {
+    cwd: '/work/dev/app',
+    git: { available: false, reason: 'not_repo' },
+    notes: null,
+    leftOff: { source: 'claude-code', from: 'lastMessage', at: '2026-11-12T10:00:00.000Z', text: 'Done.', lastUserMessage: null },
+  };
+  for (const [language, label] of [['en', 'Forget'], ['es', 'Olvidar']]) {
+    for (const sure of [true, false]) {
+      const calls: string[] = [];
+      const asked: Array<Record<string, unknown>> = [];
+      let refreshed = 0;
+      const t = (key: string, vars?: Record<string, unknown>) => translate(language, key, vars);
+      const view = plainLeftOffView({
+        api: async (method: string, path: string) => (calls.push(`${method} ${path}`), method === 'GET' ? answer : null),
+        el,
+        t,
+        isPlain: () => true,
+        confirm: async (options: Record<string, unknown>) => (asked.push(options), sure),
+        refresh: () => refreshed++,
+      });
+      const nodes = (await view.render({ selection: { ws: 'dev', rel: 'a b' }, date: '2026-11-12', setHeading: () => {} })) as Node[];
+      const [forget] = buttons(nodes[0]);
+      assert.equal(text(forget), label, language);
+      await (forget.attrs.onclick as () => Promise<void>)();
+      assert.deepEqual(asked, [{ title: t('overview.forgetTitle'), message: t('overview.forgetConfirm'), confirmLabel: label, cancelLabel: t('overview.cancel'), danger: true }]);
+      assert.deepEqual(calls, sure ? ['GET /api/folder/git?ws=dev&rel=a+b', 'DELETE /api/folder/left-off?ws=dev&rel=a+b'] : ['GET /api/folder/git?ws=dev&rel=a+b'], `${language} confirmed: ${sure}`);
+      assert.equal(refreshed, sure ? 1 : 0);
+    }
+  }
+  for (const key of ['overview.forget', 'overview.forgetTitle', 'overview.forgetConfirm', 'overview.forgetFailed', 'overview.cancel']) {
+    for (const language of ['en', 'es']) assert.equal(typeof MESSAGES[language][key], 'string', `${language} ${key}`);
+  }
+  // gentle-deck's block (a browser module, read as source): Forget only on a record's summary, after confirmDialog, then the panel reloads.
+  const overviewJs = readFileSync(fileURLToPath(new URL('../public/features/overview.js', import.meta.url)), 'utf8');
+  assert.match(overviewJs, /summary\?\.source === 'claude-code'/);
+  assert.match(overviewJs, /confirmDialog\(\{ title: t\('overview\.forgetTitle'\)/);
+  assert.match(overviewJs, /api\('DELETE', `\/api\/folder\/left-off\?\$\{new URLSearchParams\(\{ ws: selection\.ws, rel: selection\.rel \}\)\}`\)/);
+  assert.match(overviewJs, /panel\.refreshPanel\(\)/);
+  // Without the confirm and reload it is given (an older caller), no button: never a forget without asking.
+  const bare = plainLeftOffView({ api: async () => answer, el, t: (key: string) => key, isPlain: () => true });
+  assert.deepEqual(buttons((await bare.render({ selection: { ws: 'dev', rel: 'app' }, date: '2026-11-12', setHeading: () => {} }))[0]), []);
+});
+
+/** The source of a top-level declaration of public/features/overview.js (a browser module Node cannot import), up to its closing line. */
+function overviewDeclaration(head: string, close = '\n}\n'): string {
+  const source = readFileSync(fileURLToPath(new URL('../public/features/overview.js', import.meta.url)), 'utf8');
+  const start = source.indexOf(`\n${head}`);
+  assert.ok(start >= 0, `${head} is missing from overview.js`);
+  return source.slice(start, source.indexOf(close, start) + close.length);
+}
+const overviewFunction = (name: string) => overviewDeclaration(`function ${name}(`);
+
+test('an answer with engramUnavailable shows a notice that Engram is not responding, above the rows and the block; without it, none', () => {
+  for (const language of ['en', 'es']) {
+    const t = (key: string, vars?: Record<string, unknown>) => translate(language, key, vars);
+    // The function as overview.js has it, run with the test's el and t.
+    const engramDownNotice = new Function('el', 't', `${overviewFunction('engramDownNotice')}\nreturn engramDownNotice;`)(el, t);
+    const shown = engramDownNotice({ engramUnavailable: true, rows: [] }) as Node;
+    assert.deepEqual(shown, el('p', { class: 'notice overview-warn', role: 'status' }, t('overview.engramDown')), 'the same notice style as overview.truncated');
+    assert.match(text(shown), language === 'en' ? /^Engram is not responding, so this shows only Mirador's local records of Claude Code\.$/ : /^Engram no responde, así que esto muestra solo los registros locales de Mirador de Claude Code\.$/);
+    assert.equal(engramDownNotice({ rows: [] }), null, 'no flag: no notice');
+    assert.equal(engramDownNotice({ engramUnavailable: false, rows: [] }), null);
+  }
+  // Both views put it under the truncated notice and above what they show from the records.
+  const workspace = overviewDeclaration('const workspaceView = {', '\n};\n');
+  assert.match(workspace, /truncatedNotice\(data\),\s*engramDownNotice\(data\),\s*summaryCard\(data, selection\.ws\),/);
+  assert.match(workspace, /data\.rows\.map\(\(row\) => rowView\(row, selection\.ws, textOptions\)\)/, 'the rows still show under it');
+  assert.match(overviewDeclaration('async function leftOff('), /\[call, truncatedNotice\(folder\.value\), engramDownNotice\(folder\.value\), leftOffCard\(folder\.value, selection\)\]/);
 });

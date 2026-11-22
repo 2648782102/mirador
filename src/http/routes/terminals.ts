@@ -1,5 +1,7 @@
 import { agentLaunch, offeredAgents, type AgentLaunch } from '../../agents/catalog.ts';
 import { bridgeArgs } from '../../attention/agent-args.ts';
+import { stateDir } from '../../config.ts';
+import { LEFT_OFF_AGENT, deleteLeftOff, leftOffDir } from '../../memory/left-off.ts';
 import { nightAttention, nightService, taskText, type NightService } from '../../night/service.ts';
 import { randomUUID } from 'node:crypto';
 import { launchGate, type LaunchRunStatus } from '../../system/memory-gate.ts';
@@ -279,10 +281,19 @@ export const terminalRoutes: RouteModule = (ctx) => {
     },
     {
       // Olvidar: drops a sleeping agent's record for good (its pi session file stays where pi keeps it).
+      // A Claude Code agent's folder also loses its "where it left off" record (src/memory/left-off.ts).
       method: 'DELETE',
       path: '/api/terminals/sleeping/:id',
-      handler: ({ res, params }) => {
-        if (!openAgentsOf(ctx.terminals)?.forgetSleeping(sleepingId(params.id))) throw unknownSleeping();
+      handler: async ({ res, params }) => {
+        const agents = openAgentsOf(ctx.terminals);
+        const id = sleepingId(params.id);
+        const sleeper = agents?.sleeping().find((agent) => agent.id === id);
+        if (!agents?.forgetSleeping(id)) throw unknownSleeping();
+        if (sleeper?.agent === LEFT_OFF_AGENT) {
+          await deleteLeftOff(leftOffDir(stateDir()), sleeper.workspaceId, sleeper.rel).catch((error) =>
+            console.error(`mirador: a left-off record could not be removed: ${(error as NodeJS.ErrnoException)?.code ?? 'error'}`),
+          );
+        }
         sendNoContent(res);
       },
     },

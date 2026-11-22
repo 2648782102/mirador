@@ -5,12 +5,12 @@ import { LEFT_OFF_DAYS, stateDir } from '../../config.ts';
 import { describeFolders, listFolders } from '../../folders/tree.ts';
 import { projectsUnder, windowMayMissDay, type Observation } from '../../memory/daily-summary.ts';
 import { EngramUnavailableError, RECENT_LIMIT } from '../../memory/engram.ts';
-import { leftOffDir, readLeftOff, type LeftOffRecord } from '../../memory/left-off.ts';
+import { deleteLeftOff, leftOffDir, readLeftOff, type LeftOffRecord } from '../../memory/left-off.ts';
 import { memoryLookup } from '../../memory/folder-memory.ts';
 import { buildMemoryHealth, resolveFolders, type HealthFolder, type LookupCache } from '../../memory/memory-health.ts';
 import { buildWorkspaceOverview, folderProjects, type OverviewFolder } from '../../memory/overview.ts';
 import type { RouteModule } from '../context.ts';
-import { sendJson } from '../respond.ts';
+import { sendJson, sendNoContent } from '../respond.ts';
 
 /** How much of a session summary each row of the workspace overview keeps: rows stay compact. */
 const ROW_EXCERPT_LINES = 4;
@@ -30,13 +30,21 @@ async function isRepo(path: string): Promise<boolean> {
  * per folder (the chosen folders, or every first-level folder when none were chosen,
  * as the sidebar shows them) saying when it was last worked on and where it left off.
  * Two Engram reads per request (GET /projects and one all-projects window), never one
- * per folder. The root gets a row too when Engram holds memory saved in it.
+ * per folder. The root gets a row too when Engram holds memory saved in it, or has a local record.
+ * Each row's "where it left off" is the newest of Engram's summary and the folder's local record, as
+ * below (one record read per folder); with a record in any of its folders, an unreachable Engram
+ * still answers 200, from the records alone, with `engramUnavailable: true`; without one, a 503 as before.
  *
  * GET /api/overview/folder?ws=&rel=&date=: the same row for one folder, resolved to its
  * Engram project the way /api/summary does, for the block above the daily summary. Its
  * "where it left off" is the newest of Engram's latest session summary and the folder's local
  * record of Claude Code's hooks (src/memory/left-off.ts); with a record, an unreachable Engram
  * still answers 200, from the record alone, with `engramUnavailable: true`.
+ *
+ * DELETE /api/folder/left-off?ws=&rel=: Forget on the block. Removes that folder's local record (only
+ * its file), resolved the same way, so an unknown workspace is a 404 and a path outside it a 400;
+ * 204 whether or not there was one. Not under /api/overview: plain mode, which calls no Engram
+ * route, has the same Forget.
  *
  * Both answer `truncated` like /api/summary: Engram's window of the newest
  * RECENT_LIMIT entries may not reach back to the whole day.
@@ -50,6 +58,9 @@ export const overviewRoutes: RouteModule = (ctx) => {
   const mayMissDay = (observations: Observation[], date: string) =>
     windowMayMissDay(observations.map((o) => o.created_at), RECENT_LIMIT, date, ctx.config.timeZone);
   const lookupCache: LookupCache = new Map();
+  /** The folder's local left-off record, or null (none, expired, or the capture off with `leftOff: false`). */
+  const localRecord = (workspaceId: string, rel: string): Promise<LeftOffRecord | null> =>
+    ctx.config.leftOff === false ? Promise.resolve(null) : readLeftOff(leftOffDir(stateDir()), workspaceId, rel, { days: ctx.config.leftOffDays ?? LEFT_OFF_DAYS });
 
   /** Each workspace's root and the folders its overview shows; an unreadable workspace is skipped. */
   async function workspaceFolders(): Promise<HealthFolder[]> {
@@ -79,7 +90,22 @@ export const overviewRoutes: RouteModule = (ctx) => {
         const nodes = workspace.folders.length
           ? await describeFolders(workspace.root, workspace.folders, ignore)
           : await listFolders(workspace.root, '', ignore);
-        const [listing, observations] = await Promise.all([ctx.engram.projects(), ctx.engram.allObservations()]);
+        // One local record per folder (and the root), read beside Engram's two reads.
+        const [records, read] = await Promise.all([
+          Promise.all(['', ...nodes.map((node) => node.rel)].map(async (rel) => [rel, await localRecord(workspace.id, rel)] as const)),
+          Promise.all([ctx.engram.projects(), ctx.engram.allObservations()]).then((value) => ({ value }), (error: unknown) => ({ error })),
+        ]);
+        const local = new Map(records.filter((entry): entry is readonly [string, LeftOffRecord] => entry[1] !== null));
+        let listing: Awaited<ReturnType<typeof ctx.engram.projects>> = [];
+        let observations: Observation[] = [];
+        let engramUnavailable = false;
+        if ('error' in read) {
+          // Without a local record in the workspace, an unreachable Engram is a 503 as before.
+          if (!(read.error instanceof EngramUnavailableError) || !local.size) throw read.error;
+          engramUnavailable = true;
+        } else {
+          [listing, observations] = read.value;
+        }
         const projects = folderProjects(listing);
         const hasMemory = memoryLookup(listing);
         const folders: OverviewFolder[] = nodes.map((node) => ({
@@ -91,7 +117,7 @@ export const overviewRoutes: RouteModule = (ctx) => {
           hasMemory: hasMemory(node.path),
         }));
         const own = projects.at(rootPath);
-        if (own.length) folders.push({ name: workspace.name, rel: '', path: rootPath, isRepo: await isRepo(rootPath), projects: own, hasMemory: true });
+        if (own.length || local.has('')) folders.push({ name: workspace.name, rel: '', path: rootPath, isRepo: await isRepo(rootPath), projects: own, hasMemory: own.length > 0 });
         const { rows, summary } = buildWorkspaceOverview({
           date,
           timeZone,
@@ -100,8 +126,16 @@ export const overviewRoutes: RouteModule = (ctx) => {
           windowFull: observations.length >= RECENT_LIMIT,
           excerptLines: ROW_EXCERPT_LINES,
           goalChars: ROW_GOAL_CHARS,
+          localLeftOff: (folder) => local.get(folder.rel) ?? null,
         });
-        sendJson(res, 200, { workspace: { id: workspace.id, name: workspace.name }, date, truncated: mayMissDay(observations, date), summary, rows });
+        sendJson(res, 200, {
+          workspace: { id: workspace.id, name: workspace.name },
+          date,
+          truncated: mayMissDay(observations, date),
+          summary,
+          rows,
+          ...(engramUnavailable ? { engramUnavailable } : {}),
+        });
       },
     },
     {
@@ -110,8 +144,7 @@ export const overviewRoutes: RouteModule = (ctx) => {
       handler: async ({ res, url }) => {
         const date = ctx.parseDate(url.searchParams.get('date'));
         const { workspace, path, rel } = await ctx.resolveFolder(url.searchParams.get('ws'), url.searchParams.get('rel'));
-        const local: LeftOffRecord | null =
-          ctx.config.leftOff === false ? null : await readLeftOff(leftOffDir(stateDir()), workspace.id, rel, { days: ctx.config.leftOffDays ?? LEFT_OFF_DAYS });
+        const local = await localRecord(workspace.id, rel);
         let projects: string[] = [];
         // The Engram read as received: whether it is full (and may cut the day off) depends on all of it.
         let window: Observation[] = [];
@@ -157,6 +190,16 @@ export const overviewRoutes: RouteModule = (ctx) => {
           localLeftOff: () => local,
         });
         sendJson(res, 200, { cwd: path, projects, truncated: mayMissDay(window, date), row: rows[0], ...(engramUnavailable ? { engramUnavailable } : {}) });
+      },
+    },
+    {
+      method: 'DELETE',
+      path: '/api/folder/left-off',
+      handler: async ({ res, url }) => {
+        const { workspace, rel } = await ctx.resolveFolder(url.searchParams.get('ws'), url.searchParams.get('rel'));
+        // The file is recordFile's hash of the resolved folder: the query never names a path.
+        await deleteLeftOff(leftOffDir(stateDir()), workspace.id, rel);
+        sendNoContent(res);
       },
     },
     {
