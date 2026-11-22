@@ -10,6 +10,9 @@ Planned for 0.2.0.
 ### Added
 
 - Clicking a terminal's tab, or a grid tile that makes another terminal active, opens its workspace and folders down to its project in the sidebar tree and collapses the rest, without changing the layout Mirador saves. It is on by default; turn it off with **El árbol sigue a la terminal / Tree follows the terminal** under **Ajustes / Settings**.
+- A file path in a terminal's output that names a file of its workspace (absolute, `./x`, `../x` or `a/b.ts`, with
+  an optional `:line` or `:line:col`) is a link: a click opens the file in the file editor. Only files the editor
+  opens are links: not a symlink whose target leaves the workspace, nor a file over 1 MiB.
 
 ## [0.1.0] - 2026-11-20
 
