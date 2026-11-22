@@ -62,6 +62,13 @@ export interface MiradorConfig {
    * the night reasons say it (ownerNameFrom); unset = DEFAULT_OWNER_NAME, so no prompt names anyone.
    */
   ownerName?: string;
+  /**
+   * "Where it left off" from Claude Code's hooks (src/memory/left-off.ts): only false turns it off; then the
+   * hooks forward nothing and no record is written or read.
+   */
+  leftOff?: boolean;
+  /** Days a local left-off record is kept before it is removed; unset or not valid = LEFT_OFF_DAYS. */
+  leftOffDays?: number;
 }
 
 /** Agent launch pacing: agents per batch, settle after a batch, memory left free, longest wait for memory. */
@@ -105,6 +112,17 @@ function savedIdleSleep(value: unknown): { hours: number; problems: string[] } {
   if (value === undefined || value === null) return { hours: IDLE_SLEEP_HOURS, problems: [] };
   if (typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= MAX_IDLE_SLEEP_HOURS) return { hours: value, problems: [] };
   return { hours: IDLE_SLEEP_HOURS, problems: [`idleSleepHours must be a number of hours from 0 (off) to ${MAX_IDLE_SLEEP_HOURS}; the default (${IDLE_SLEEP_HOURS}) applies`] };
+}
+
+/** Days a local left-off record is kept (config `leftOffDays`), and the most allowed. */
+export const LEFT_OFF_DAYS = 30;
+const MAX_LEFT_OFF_DAYS = 3650;
+
+/** The saved `leftOffDays` when it is a whole number of days in range, else the default with one line saying so. */
+function savedLeftOffDays(value: unknown): { days: number; problems: string[] } {
+  if (value === undefined || value === null) return { days: LEFT_OFF_DAYS, problems: [] };
+  if (Number.isInteger(value) && (value as number) >= 1 && (value as number) <= MAX_LEFT_OFF_DAYS) return { days: value as number, problems: [] };
+  return { days: LEFT_OFF_DAYS, problems: [`leftOffDays must be a whole number of days from 1 to ${MAX_LEFT_OFF_DAYS}; the default (${LEFT_OFF_DAYS}) applies`] };
 }
 
 /** The saved `mode` when it is one of MODES, else auto with one line saying so. */
@@ -172,7 +190,7 @@ export interface LoadedConfig extends MiradorConfig {
    * listed (see WorkspaceStore). Empty when the file is fine.
    */
   workspaceProblems: string[];
-  /** Values of `launches`, `idleSleepHours`, `mode`, `browser` and `ownerName` left out because they are not valid; logged at startup. */
+  /** Values of `launches`, `idleSleepHours`, `mode`, `browser`, `ownerName` and `leftOffDays` left out because they are not valid; logged at startup. */
   launchProblems: string[];
 }
 
@@ -262,7 +280,7 @@ export async function loadConfig(path = configPath(), env = process.env): Promis
     saved = JSON.parse(await readFile(path, 'utf8')) as SavedConfig;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-    return { ...base, launches: {}, idleSleepHours: IDLE_SLEEP_HOURS, workspaceProblems: [], launchProblems: [] };
+    return { ...base, launches: {}, idleSleepHours: IDLE_SLEEP_HOURS, leftOff: true, leftOffDays: LEFT_OFF_DAYS, workspaceProblems: [], launchProblems: [] };
   }
   // Before workspaces, the config held one `root`: it becomes the Dev workspace.
   const { root, workspaces, browser: browserValue, ownerName: ownerValue, ...rest } = saved;
@@ -273,6 +291,7 @@ export async function loadConfig(path = configPath(), env = process.env): Promis
   const mode = savedMode(rest.mode);
   const browser = savedBrowser(browserValue);
   const owner = savedOwnerName(ownerValue);
+  const leftOffDays = savedLeftOffDays(rest.leftOffDays);
   const shellIssue = shellProblems(rest.shell);
   // Only an explicit false turns the attention bridge off.
   return {
@@ -283,6 +302,9 @@ export async function loadConfig(path = configPath(), env = process.env): Promis
     mode: mode.mode,
     launches: launches.launches,
     idleSleepHours: idleSleep.hours,
+    // Only an explicit false turns the left-off capture off.
+    leftOff: rest.leftOff !== false,
+    leftOffDays: leftOffDays.days,
     ...(browser.browser ? { browser: browser.browser } : {}),
     ...(owner.ownerName ? { ownerName: owner.ownerName } : {}),
     workspaceProblems: loaded.problems,
@@ -292,6 +314,7 @@ export async function loadConfig(path = configPath(), env = process.env): Promis
       ...mode.problems,
       ...browser.problems,
       ...owner.problems,
+      ...leftOffDays.problems,
       ...shellIssue,
     ],
   };
