@@ -17,10 +17,10 @@ A local dashboard for your project folders, with agent terminals inside it. Star
 
 What Mirador focuses on:
 
-- **Where it left off.** Each project shows where its last session stopped, read from persistent memory (Engram), and a [tracking view](docs/attention.md#tracking-view) follows the day.
+- **Where it left off.** Each project shows where its last session stopped, read from persistent memory (Engram) or, for Claude Code, from a small local record of its last messages, and a [tracking view](docs/attention.md#tracking-view) follows the day.
 - **Resource control.** [One systemd scope per agent](docs/agents.md#one-systemd-scope-per-terminal) (Linux), a [launch gate](docs/agents.md#opening-many-agents-without-filling-the-memory) that waits for free memory, [idle agents that sleep](docs/agents.md#sleeping-agents-lazy-restore) and [MCP servers per project](docs/agents.md#mcp-servers-per-project).
 - **Back after a reboot.** Agents [come back](docs/agents.md#reopening-agents-after-a-restart) to their folder and, with gentle-shell, pi, Claude Code, opencode or Antigravity, to their session.
-- **Mirador itself stays on the machine.** Zero telemetry, no accounts; the server listens on `127.0.0.1` only. That is Mirador, not the agents running inside it: Claude Code, pi or any other agent still talks to its own provider. In the full mode the night shift and **Mejorar con IA** send their prompts to Claude through pi, and the night shift writes to a Telegram bot only once you connect your own.
+- **Mirador itself stays on the machine.** Zero telemetry, no accounts; the server listens on `127.0.0.1` only. That is Mirador, not the agents running inside it: Claude Code, pi or any other agent still talks to its own provider. In the full mode the night shift and **Mejorar con IA** send their prompts to Claude through pi, and the night shift writes to a Telegram bot only once you connect your own. For **Dónde quedó / Where it left off**, Mirador keeps your last message to Claude Code, its last answer and its compaction summary in plaintext under `~/.local/state/mirador/left-off/` (0600, 30 days by default, `leftOff: false` turns it off); they are never sent anywhere ([details](docs/attention.md#where-it-left-off)).
 - **A browser window.** No GPU, Vulkan or desktop session needed, and inside WSL2 it opens in the Windows browser.
 - **Native gentle-shell, pi and Engram integration**, while any terminal agent or a plain `bash` works too.
 
@@ -141,7 +141,7 @@ A local dashboard for your project folders. Each row links to the full descripti
 
 | Capability | In one sentence |
 |------------|-----------------|
-| [Where it left off](docs/attention.md#where-it-left-off) | **Dónde quedó / Where it left off** shows each folder's last worked day and the next steps of its latest session summary, read from Engram. |
+| [Where it left off](docs/attention.md#where-it-left-off) | **Dónde quedó / Where it left off** shows each folder's last worked day and the next steps of its latest session summary, read from Engram, or Claude Code's last message and yours when that is newer, kept locally for 30 days (`leftOffDays`). |
 | [Tracking view](docs/attention.md#tracking-view) | **Seguimiento / Tracking** swaps the layout for a read-only overview of agents in lanes by what they need from you. |
 | [Attention inbox](docs/attention.md#attention-inbox) | **Te esperan (N) / Waiting for you (N)** lists the agent terminals that need your answer or finished their turn. |
 | [One systemd scope per terminal](docs/agents.md#one-systemd-scope-per-terminal) | On Linux each terminal runs in its own systemd user scope, so an out-of-memory kill takes one terminal, not all of them. |
@@ -200,7 +200,7 @@ of them is needed for the plain mode.
 | Name | What it is | What Mirador does with it |
 |------|------------|---------------------------|
 | gentle-ai | The Gentle setup tool for AI agents; it records the agents it configured in `~/.gentle-ai/state.json` (`GENTLE_AI_HOME` moves it). | Reads that file only: its `installed_agents` add agents to the agent picker, and the file's presence makes `mode: "auto"` pick the full mode. `pnpm run doctor` reports it. |
-| Engram | A local persistent-memory server that agents save their session summaries to. | Reads it at the config's `engramUrl` (`http://127.0.0.1:7437` by default) for the daily summary and [where it left off](docs/attention.md#where-it-left-off). Without it those views are empty. |
+| Engram | A local persistent-memory server that agents save their session summaries to. | Reads it at the config's `engramUrl` (`http://127.0.0.1:7437` by default) for the daily summary and [where it left off](docs/attention.md#where-it-left-off). Without it those views are empty, except where it left off for a folder where Claude Code ran in Mirador. |
 | gentle-deck | The internal name of the full mode (memory, night shift and Pi MCP), kept as the config value `mode: "gentle-deck"`. | Nothing on screen: the app is called Mirador in every mode. Where the old name stays and why: [CONTRIBUTING.md](CONTRIBUTING.md#the-name-gentle-deck-in-the-code). |
 | `bin/herdr-shim` | A gentle-shell compatibility layer: gentle-shell reports what an agent is doing with `herdr pane report-metadata`, and the shim answers that command. It has no relation to the Herdr product ([herdr.dev](https://herdr.dev)); Mirador neither ships nor runs Herdr. | Agent terminals get `HERDR_BIN_PATH` pointing at the shim, which forwards each report as one JSON line to a Unix socket under `<runtime>/mirador/herdr/`, feeding the [attention inbox](docs/attention.md#attention-inbox). It prints nothing, always exits 0 and gives up after one second. |
 
