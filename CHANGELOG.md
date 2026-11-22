@@ -14,6 +14,18 @@ Planned for 0.2.0.
   an optional `:line` or `:line:col`) is a link: a click opens the file in the file editor. Only files the editor
   opens are links: not a symlink whose target leaves the workspace, nor a file over 1 MiB.
 
+### Documentation
+
+- The README says what Mirador focuses on, rather than what other agent dashboards do not do.
+- The README has a **How Mirador compares** table (form, platforms, license, worktrees, remote and phone) for
+  Herdr, Paradev, Claude Code Desktop, cmux and Emdash, from each project's own site or repository.
+- The README's table of what Mirador does adds the **Cambios / Changes** view, browser notifications and the night
+  shift, each linked to its description in `docs/`.
+- The README says that what stays on the machine is Mirador itself, not the agents running inside it, names what
+  the full mode's night shift and **Mejorar con IA** send to Claude, and says that `bin/herdr-shim` is a gentle-shell compatibility layer with no relation to the Herdr product.
+- `docs/security.md` explains how to open Mirador from another machine through an `ssh -L` tunnel, and its risks.
+  The server still listens on `127.0.0.1` only.
+
 ## [0.1.0] - 2026-11-20
 
 The first public version: a local dashboard on `127.0.0.1` for your project folders, with agent terminals inside it.

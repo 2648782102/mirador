@@ -15,18 +15,31 @@ A local dashboard for your project folders, with agent terminals inside it. Star
 
 ## Why Mirador
 
-What Mirador does that other agent dashboards do not:
+What Mirador focuses on:
 
 - **Where it left off.** Each project shows where its last session stopped, read from persistent memory (Engram), and a [tracking view](docs/attention.md#tracking-view) follows the day.
 - **Resource control.** [One systemd scope per agent](docs/agents.md#one-systemd-scope-per-terminal) (Linux), a [launch gate](docs/agents.md#opening-many-agents-without-filling-the-memory) that waits for free memory, [idle agents that sleep](docs/agents.md#sleeping-agents-lazy-restore) and [MCP servers per project](docs/agents.md#mcp-servers-per-project).
 - **Back after a reboot.** Agents [come back](docs/agents.md#reopening-agents-after-a-restart) to their folder and, with gentle-shell, pi, Claude Code, opencode or Antigravity, to their session.
-- **Nothing leaves the machine.** Zero telemetry, no accounts; the server listens on `127.0.0.1` only.
+- **Mirador itself stays on the machine.** Zero telemetry, no accounts; the server listens on `127.0.0.1` only. That is Mirador, not the agents running inside it: Claude Code, pi or any other agent still talks to its own provider. In the full mode the night shift and **Mejorar con IA** send their prompts to Claude through pi, and the night shift writes to a Telegram bot only once you connect your own.
 - **A browser window.** No GPU, Vulkan or desktop session needed, and inside WSL2 it opens in the Windows browser.
 - **Native gentle-shell, pi and Engram integration**, while any terminal agent or a plain `bash` works too.
 
-If you need remote machines over SSH, a phone app or a one-command install with a prebuilt binary, [Herdr](https://herdr.dev) (Apache-2.0) does those today and Mirador does not.
+If you need remote machines over SSH, a phone app or a single Rust binary, [Herdr](https://herdr.dev) (Apache-2.0) does those today and Mirador does not. Mirador has no relation to Herdr: the `herdr` names in its code are a gentle-shell compatibility layer ([`bin/herdr-shim`](#gentle-names-in-the-code)), and Mirador neither ships nor runs Herdr.
 
 Mirador is an independent project, not an official part of gentle-shell; it builds on [gentle-shell](https://github.com/Gentleman-Programming/gentle-shell), pi and Engram, and thanks that community.
+
+## How Mirador compares
+
+Other tools run coding agents side by side too. The table lists what each one's own site or repository said on 2026-11-21. A dash means its official pages do not say; each project's site is the source of truth and things change.
+
+| | Form | Platforms | License | Agents in git worktrees | Remote machines and phone |
+|---|---|---|---|---|---|
+| **Mirador** | Local web dashboard in a browser window | Linux, WSL2; macOS experimental | Apache-2.0 | No | No; you can [reach it through an `ssh -L` tunnel](docs/security.md#opening-mirador-from-another-machine) |
+| [Herdr](https://herdr.dev) | Desktop app; Herdr TUI in the terminal | macOS (Apple silicon), Linux, Windows | Apache-2.0 | — | SSH; iPhone, iPad and Android apps |
+| [Paradev](https://paradev.com) | Desktop app, plus CLI, SDK and MCP server | macOS; Linux experimental; no Windows yet | MIT | Yes | iPhone and iPad app |
+| [Claude Code Desktop](https://code.claude.com/docs/en/desktop) | The Code tab of the Claude desktop app | macOS, Windows; Linux beta (Ubuntu, Debian) | — | Optional, per session | SSH sessions; cloud sessions in the Claude mobile app |
+| [cmux](https://github.com/manaflow-ai/cmux) | Native macOS terminal app | macOS only | GPL-3.0-or-later (server parts BUSL-1.1) | — | SSH; iPhone app in beta |
+| [Emdash](https://github.com/generalaction/emdash) (Classic) | Desktop app | macOS, Windows, Linux | Apache-2.0 | Yes | SSH/SFTP |
 
 ## Quickstart
 
@@ -138,10 +151,15 @@ A local dashboard for your project folders. Each row links to the full descripti
 | [Opening several agents](docs/agents.md#opening-several-agents) | Mark folders in selection mode, or save them as the workspace's projects, and open one agent in each. |
 | [MCP servers per project](docs/agents.md#mcp-servers-per-project) | Turn off the MCP servers a folder does not need, which saves memory in every agent opened there. |
 | [Browser window](docs/configuration.md#browser) | A Chromium-family browser opens Mirador as an app window; any other browser gets a tab, and the `browser` key overrides the choice. |
+| [Changes](docs/features.md#what-it-does) | **Cambios / Changes** shows a folder's or workspace's changes against its last commit, staged and unstaged together, with each file's diff coloured by line; it only reads the repository. |
+| [Browser notifications](docs/attention.md#attention-inbox) | Off until you click **Activar avisos del navegador / Turn on browser notifications** in the inbox; then an agent that starts waiting for you or stops with an error shows one browser notification, and finished turns never do. |
+| [Night shift](docs/attention.md#tracking-view) | In the full mode, the **Piloto automático / Autopilot** answers agents' questions while you are away, on a schedule or switched on by hand, leaves sensitive actions for you and reports each move in the tracking view. |
 | [File editor](docs/features.md#file-editor) | **Archivos / Files** edits a folder's text files, dotenv files first, and asks before overwriting an agent's change. |
 | [Security](docs/security.md#security) | The server listens on `127.0.0.1` only and checks a session token, the `Host` header and, on every change, the app's own `Origin`. |
 
-Workspaces, the folder tree, terminals as tabs or a grid, the daily summary, the night shift and resource profiles are in [docs/features.md](docs/features.md). Contributing: [CONTRIBUTING.md](CONTRIBUTING.md); reporting a vulnerability: [SECURITY.md](SECURITY.md).
+To open Mirador from another machine, forward its port with `ssh -L` after reading the risks: [Opening Mirador from another machine](docs/security.md#opening-mirador-from-another-machine).
+
+Workspaces, the folder tree, terminals as tabs or a grid, the daily summary, the night shift's settings and resource profiles are in [docs/features.md](docs/features.md). Contributing: [CONTRIBUTING.md](CONTRIBUTING.md); reporting a vulnerability: [SECURITY.md](SECURITY.md).
 
 ## How it works
 
@@ -184,7 +202,7 @@ of them is needed for the plain mode.
 | gentle-ai | The Gentle setup tool for AI agents; it records the agents it configured in `~/.gentle-ai/state.json` (`GENTLE_AI_HOME` moves it). | Reads that file only: its `installed_agents` add agents to the agent picker, and the file's presence makes `mode: "auto"` pick the full mode. `pnpm run doctor` reports it. |
 | Engram | A local persistent-memory server that agents save their session summaries to. | Reads it at the config's `engramUrl` (`http://127.0.0.1:7437` by default) for the daily summary and [where it left off](docs/attention.md#where-it-left-off). Without it those views are empty. |
 | gentle-deck | The internal name of the full mode (memory, night shift and Pi MCP), kept as the config value `mode: "gentle-deck"`. | Nothing on screen: the app is called Mirador in every mode. Where the old name stays and why: [CONTRIBUTING.md](CONTRIBUTING.md#the-name-gentle-deck-in-the-code). |
-| `bin/herdr-shim` | Mirador's stand-in for the herdr CLI. gentle-shell reports what an agent is doing with `herdr pane report-metadata`. | Agent terminals get `HERDR_BIN_PATH` pointing at the shim, which forwards each report as one JSON line to a Unix socket under `<runtime>/mirador/herdr/`, feeding the [attention inbox](docs/attention.md#attention-inbox). It prints nothing, always exits 0 and gives up after one second. |
+| `bin/herdr-shim` | A gentle-shell compatibility layer: gentle-shell reports what an agent is doing with `herdr pane report-metadata`, and the shim answers that command. It has no relation to the Herdr product ([herdr.dev](https://herdr.dev)); Mirador neither ships nor runs Herdr. | Agent terminals get `HERDR_BIN_PATH` pointing at the shim, which forwards each report as one JSON line to a Unix socket under `<runtime>/mirador/herdr/`, feeding the [attention inbox](docs/attention.md#attention-inbox). It prints nothing, always exits 0 and gives up after one second. |
 
 ## Demo
 

@@ -76,3 +76,22 @@ test('the README has a section that explains gentle-ai, Engram, gentle-deck and 
   for (const name of ['gentle-ai', 'Engram', 'gentle-deck', 'bin/herdr-shim']) assert.ok(body.includes(name), `the section does not name ${name}`);
   assert.ok(readme.includes('[Gentle names](#gentle-names-in-the-code)'), 'the top links do not list the section');
 });
+
+test('the README says what Mirador focuses on, not what other dashboards lack, and points to the ssh -L tunnel and its risks', () => {
+  const readme = read('README.md');
+  const why = section(readme, 'Why Mirador');
+  assert.ok(why.includes('What Mirador focuses on'), 'the Why Mirador lead-in is "What Mirador focuses on"');
+  assert.ok(!/other agent dashboards do not/.test(readme), 'no claim of what other dashboards do not do');
+  assert.ok(readme.includes('(docs/security.md#opening-mirador-from-another-machine)'), 'the README points to the tunnel section');
+  const tunnel = section(read('docs/security.md'), 'Opening Mirador from another machine');
+  assert.ok(tunnel, 'no "## Opening Mirador from another machine" section in docs/security.md');
+  assert.ok(tunnel.includes('ssh -N -L 127.0.0.1:4545:127.0.0.1:4545'), 'the forward is bound to 127.0.0.1 on the client');
+  for (const risk of ['-g', '0.0.0.0', 'reverse proxy', 'full terminal access', 'Close the tunnel']) assert.ok(tunnel.includes(risk), `the section does not cover ${risk}`);
+});
+
+test('the README compares Mirador with other tools without stars, prices or exclusivity claims', () => {
+  const table = section(read('README.md'), 'How Mirador compares');
+  assert.ok(table, 'no "## How Mirador compares" section in README.md');
+  assert.ok(!/[★⭐]|\$\d|\bstars\b|\bonly one\b|\bthe only\b|\bunique\b/i.test(table), 'stars, prices or an exclusivity claim in the comparison');
+  assert.match(table, /\| \*\*Mirador\*\* \|[^\n]*\| Apache-2\.0 \| No \|/, 'the Mirador row says Apache-2.0 and no worktrees');
+});
