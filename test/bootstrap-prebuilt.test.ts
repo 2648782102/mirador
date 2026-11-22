@@ -15,7 +15,7 @@ import { access, chmod, lstat, mkdir, mkdtemp, readdir, readFile, readlink, real
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { assertInstallerSandbox } from './helpers/installer-sandbox.ts';
+import { assertInstallerSandbox, writeNetworkBarrier } from './helpers/installer-sandbox.ts';
 import { PIN_NAMES, readPins, withPins, type Pins } from './helpers/bootstrap-pins.ts';
 
 const SOURCE = fileURLToPath(new URL('../scripts/bootstrap.sh', import.meta.url));
@@ -81,7 +81,9 @@ async function box(machine = 'x86_64'): Promise<Box> {
       'cp "$file" "$out"',
     ].join('\n'),
   );
-  const env: NodeJS.ProcessEnv = { PATH: `${stubs}:${process.env.PATH}`, HOME: home, MIRADOR_REPO_URL: join(dir, 'no-such-origin.git'), ...GIT_ENV };
+  // The network barrier's fake mise, curl and wget sit after the stubs (the curl stub wins) and before the system's.
+  const barrier = await writeNetworkBarrier(join(dir, 'barrier'));
+  const env: NodeJS.ProcessEnv = { PATH: `${stubs}:${barrier}:${process.env.PATH}`, HOME: home, MIRADOR_REPO_URL: join(dir, 'no-such-origin.git'), ...GIT_ENV };
   return { dir, home, stubs, served, curlLog, runLog, env };
 }
 
