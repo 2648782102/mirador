@@ -24,7 +24,8 @@ Planned for 0.2.0.
   `leftOffDays`; `leftOff: false` turns the capture off. Mirador does not read Claude Code's configuration.
 - **Dónde quedó / Where it left off** shows the newer of Claude's final message and its compaction summary, not
   always the final message; a block from the local record has **Olvidar / Forget**, which removes that record after
-  a confirmation, as forgetting the folder's sleeping Claude Code agent or removing the workspace now does too; the
+  a confirmation, as forgetting the folder's sleeping Claude Code agent (chosen as Claude Code or started as the
+  configured `agentCommand`) or removing the workspace now does too; the
   record also keeps when and why the session ended (`SessionEnd`, stored only); and the workspace **Resumen /
   Summary** rows use the record the same way as the folder view, answering from it when Engram is down, under a
   notice that Engram is not responding.

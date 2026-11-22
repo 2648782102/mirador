@@ -1,5 +1,16 @@
-import { AGENTS, SESSION, SESSION_ID, agentFor } from '../agents/catalog.ts';
+import { AGENTS, SESSION, SESSION_ID, agentFor, type AgentEntry } from '../agents/catalog.ts';
 import type { EnvProvider } from '../terminals/registry.ts';
+
+/**
+ * The catalog agent an agent terminal (or its open-agents record) runs: the one chosen by catalog id
+ * (`agent`), else the configured `agentCommand`'s (agentFor); null for a command outside the catalog or an
+ * id Mirador no longer knows. The rule that gives a terminal its bridge (bridgeArgs for the configured
+ * agent, addChosenAgentArgs for a chosen one, bridgeEnvProvider), so it is also what makes a sleeper
+ * Claude Code when forgetting it removes the folder's left-off record (DELETE /api/terminals/sleeping/:id).
+ */
+export function terminalAgent(agent: string | null | undefined, agentCommand: string): AgentEntry | null {
+  return agent ? (AGENTS.find((entry) => entry.id === agent) ?? null) : agentFor(agentCommand);
+}
 
 /**
  * `<flag> <bridge>` when Mirador can load its attention bridge into `agentCommand`:
@@ -26,10 +37,9 @@ export function bridgeArgs(agentCommand: string, bridges: string | Readonly<Reco
  * gets nothing.
  */
 export function bridgeEnvProvider(agentCommand: string, bridges: Readonly<Record<string, string>>, enabled = true): EnvProvider {
-  const configured = agentFor(agentCommand);
   return (info) => {
     if (!enabled || info.kind !== 'agent') return {};
-    const agent = info.agent ? AGENTS.find((entry) => entry.id === info.agent) : configured;
+    const agent = terminalAgent(info.agent, agentCommand);
     const bridge = agent?.bridgeEnv ? bridges[agent.id] : undefined;
     return agent?.bridgeEnv && bridge ? { [agent.bridgeEnv]: bridge } : {};
   };
