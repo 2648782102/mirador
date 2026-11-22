@@ -446,6 +446,36 @@ test('the launcher finds Node on PATH, then with mise which node, then at the mi
   assert.deepEqual(await lines(miseLog), ['which node']);
 });
 
+// The prebuilt release bundles its Node at node/bin/node beside bin/: a copy of the launcher in such a folder runs
+// that one, before any node on PATH or from mise.
+test('in a prebuilt release the launcher runs the bundled node/bin/node before PATH and mise', async () => {
+  const lookup = await sandbox('bundled-node');
+  const dir = join(scratch, 'bundled-node');
+  const nodeLog = join(dir, 'node.log');
+  const miseLog = join(dir, 'mise.log');
+  const node = (name: string) => `printf '%s\\n' ${name} >> '${nodeLog}'\nexec '${process.execPath}' "$@"`;
+  const app = join(dir, 'mirador-0.9.0-linux-x64');
+  await mkdir(join(app, 'bin'), { recursive: true });
+  await writeFile(join(app, 'bin', 'mirador'), await readFile(LAUNCHER));
+  await chmod(join(app, 'bin', 'mirador'), 0o755);
+  await stubDir(join(app, 'node', 'bin'), { node: node('bundled') });
+  const onPath = await stubDir(join(dir, 'path-node'), { node: node('path') });
+  const mise = await stubDir(join(dir, 'mise'), { mise: `printf '%s\\n' "$*" >> '${miseLog}'` });
+  await staleState(lookup);
+  lookup.env.PATH = `${mise}:${onPath}:${await stubDir(join(dir, 'linux'), { uname: LINUX })}:${await systemToolsDir()}`;
+  const result = await new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve) => {
+    const child = spawn(join(app, 'bin', 'mirador'), ['status'], { env: lookup.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (d) => (stdout += d));
+    child.stderr.on('data', (d) => (stderr += d));
+    child.on('close', (code) => resolve({ code, stdout, stderr }));
+  });
+  assert.deepEqual([result.code, result.stdout, result.stderr], [1, 'mirador: not running\n', '']);
+  assert.deepEqual(await lines(nodeLog), ['bundled']);
+  assert.deepEqual(await lines(miseLog), []);
+});
+
 test('without Node the launcher says how to get it and exits 1', async () => {
   const bare = await sandbox('no-node');
   bare.env.PATH = `${await stubDir(join(scratch, 'no-node', 'linux'), { uname: LINUX })}:${await systemToolsDir()}`;

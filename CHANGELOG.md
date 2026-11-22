@@ -13,6 +13,14 @@ Planned for 0.2.0.
 - A file path in a terminal's output that names a file of its workspace (absolute, `./x`, `../x` or `a/b.ts`, with
   an optional `:line` or `:line:col`) is a link: a click opens the file in the file editor. Only files the editor
   opens are links: not a symlink whose target leaves the workspace, nor a file over 1 MiB.
+- The groundwork for installing on Linux without compiling. A release workflow builds a prebuilt archive for
+  Linux x64 and arm64 (the official Node 24, Mirador's TypeScript sources as they are, and production
+  `node_modules` with `node-pty` built for glibc 2.28), with `SHA256SUMS` and a build-provenance attestation, and
+  attaches them to a draft release that a maintainer reviews and publishes. `scripts/bootstrap.sh` installs such
+  a release once one is pinned in it, checking the archive against the sha256 written in the script; until then,
+  and on macOS, it installs from source as before. It never overwrites or deletes a git clone in
+  `~/.local/share/mirador`, and it checks for no updates. `bin/mirador` runs the Node bundled in a prebuilt
+  release before any other.
 
 ### Documentation
 
@@ -25,6 +33,7 @@ Planned for 0.2.0.
   the full mode's night shift and **Mejorar con IA** send to Claude, and says that `bin/herdr-shim` is a gentle-shell compatibility layer with no relation to the Herdr product.
 - `docs/security.md` explains how to open Mirador from another machine through an `ssh -L` tunnel, and its risks.
   The server still listens on `127.0.0.1` only.
+- `docs/releasing.md` tells maintainers how to cut a release, review its draft and pin it in `scripts/bootstrap.sh`.
 
 ## [0.1.0] - 2026-11-20
 

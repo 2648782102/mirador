@@ -4,6 +4,8 @@
 // Every run gets a scratch HOME and a local bare repository as origin (MIRADOR_REPO_URL) whose
 // install.sh is a stub that records where it ran and with which arguments; nothing touches the
 // network, the real home or the real install.sh.
+// These tests cover the install from source, so they run a copy of the script with no release pinned,
+// whatever main pins; test/bootstrap-prebuilt.test.ts covers the prebuilt release.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
@@ -13,10 +15,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertInstallerSandbox } from './helpers/installer-sandbox.ts';
+import { withPins } from './helpers/bootstrap-pins.ts';
 
-const SCRIPT = fileURLToPath(new URL('../scripts/bootstrap.sh', import.meta.url));
+const SOURCE = fileURLToPath(new URL('../scripts/bootstrap.sh', import.meta.url));
 
 let scratch: string;
+let SCRIPT: string;
 let boxes = 0;
 
 const GIT_ENV = { GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.invalid', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.invalid' };
@@ -95,6 +99,8 @@ const installCalls = async (b: Box) => (await readFile(b.installLog, 'utf8').cat
 
 before(async () => {
   scratch = await realpath(await mkdtemp(join(tmpdir(), 'mirador-bootstrap-')));
+  SCRIPT = join(scratch, 'bootstrap.sh');
+  await writeFile(SCRIPT, withPins(await readFile(SOURCE, 'utf8')));
 });
 
 after(async () => {
