@@ -12,8 +12,10 @@
 # built node-pty: it is downloaded from GitHub Releases, checked against the sha256 pinned here before it
 # is unpacked into <that folder>/<version>, and <that folder>/current points at it; then its doctor runs and
 # bin/mirador install adds the launcher. A git clone in that folder is never overwritten or deleted: the
-# script stops and says what to do. It checks for no updates; running it again is how you update. Every
-# other platform, or one with an empty sha256, installs from source as above.
+# script stops and says what to do. A first install cut off abruptly leaves only its download folders
+# (.download.XXXXXX) there: the next run removes them and goes on. It checks for no updates; running it
+# again is how you update, and when a Mirador server runs it says that the server keeps the previous
+# version until it restarts. Every other platform, or one with an empty sha256, installs from source as above.
 #
 # A download cut short hands sh only part of this file, so nothing runs before the last line: the trap
 # above, set first, says the copy is incomplete whenever sh ends before main has started. Everything else
@@ -69,6 +71,25 @@ cleanup() {
   return 0
 }
 
+# Whether $dir is a folder holding nothing but download folders that a run of this script made with mktemp
+# (.download.XXXXXX: six letters or digits, a real folder, no link) and left there when it was cut off before
+# its cleanup ran, and at least one of them. Sets leftovers to their paths, one per line.
+only_leftovers() {
+  [ -d "$dir" ] && [ ! -L "$dir" ] || return 1
+  leftovers=""
+  for entry in "$dir"/* "$dir"/.[!.]* "$dir"/..?*; do
+    [ -e "$entry" ] || [ -L "$entry" ] || continue
+    case "${entry##*/}" in
+      .download.[A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9]) ;;
+      *) return 1 ;;
+    esac
+    [ -d "$entry" ] && [ ! -L "$entry" ] || return 1
+    leftovers="$leftovers$entry
+"
+  done
+  [ -n "$leftovers" ]
+}
+
 # Installs the pinned release for $platform into $dir/<version>, points $dir/current at it, runs its doctor and
 # adds the launcher. The archive is checked against the pinned $sha before anything is unpacked.
 prebuilt() {
@@ -86,8 +107,17 @@ prebuilt() {
     exit 1
   fi
   if [ -e "$dir" ] && [ ! -L "$dir/current" ]; then
-    echo "bootstrap.sh: $dir exists and is neither a prebuilt install of Mirador nor a git clone of it; move it away, then run this again" >&2
-    exit 1
+    if ! only_leftovers; then
+      echo "bootstrap.sh: $dir exists and is neither a prebuilt install of Mirador nor a git clone of it; move it away, then run this again" >&2
+      exit 1
+    fi
+    # A first install cut off before its cleanup ran (power off, SIGKILL): finish that cleanup, then install
+    # as on a fresh machine, the folder this run makes included.
+    printf '%s' "$leftovers" | while IFS= read -r leftover; do
+      rm -rf "$leftover"
+      echo "bootstrap.sh: removed $leftover, a download an earlier run left half done"
+    done
+    rmdir "$dir"
   fi
 
   name="mirador-$MIRADOR_VERSION-$platform"
@@ -143,11 +173,17 @@ prebuilt() {
     made_top=""
     echo "bootstrap.sh: unpacked Mirador $MIRADOR_VERSION into $target"
   fi
+  previous="$(readlink "$dir/current" 2>/dev/null || true)"
   # Earlier versions stay beside it: pointing current back at one, then running its bin/mirador install, rolls back.
   ln -sfn "$MIRADOR_VERSION" "$dir/current"
   echo "bootstrap.sh: $dir/current now points at $MIRADOR_VERSION"
 
   app="$dir/current"
+  # On an update, a server already running keeps the code it started with. bin/mirador status tells, as the
+  # launcher always does: its state file names a pid that is alive and runs src/server.ts.
+  if [ -n "$previous" ] && [ "$previous" != "$MIRADOR_VERSION" ] && "$app/bin/mirador" status >/dev/null 2>&1; then
+    echo "bootstrap.sh: a Mirador server is running, and it keeps running Mirador $previous until you restart it with: mirador stop && mirador"
+  fi
   echo "bootstrap.sh: checking the machine (doctor)"
   if ! "$app/node/bin/node" "$app/src/doctor.ts"; then
     echo "bootstrap.sh: the doctor found a problem (see above); fix it, then run this again" >&2

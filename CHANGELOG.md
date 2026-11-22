@@ -42,6 +42,9 @@ Planned for 0.2.0.
 
 - The foot of **Dónde quedó / Where it left off** names Engram when the summary comes from it ("Engram session
   summary · …").
+- `bootstrap.sh`: a first prebuilt install cut off abruptly no longer blocks the next run, which removes the
+  half-done `.download.*` folders it left and goes on; an update says when a running server keeps the previous
+  version until `mirador stop && mirador`.
 
 ### Documentation
 
