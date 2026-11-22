@@ -13,7 +13,7 @@ import { api, el, errorText, getLanguage, select, setWorkspaces, state, t, works
 import { openDialog } from '/dialog.js';
 import { plural } from '/i18n.js';
 import { icon } from '/icons.js';
-import { CLIP_LINES, clipOverflows, clipToggle, leftOffLayout, pageCount, pageKey, pageOffset, pagerView, pickCall, turnPage, waitedFor } from '/leftoff-model.js';
+import { CLIP_LINES, clipOverflows, clipToggle, leftOffLayout, pageCount, pageKey, pageOffset, pagerView, pickCall, sourceKey, turnPage, waitedFor } from '/leftoff-model.js';
 import { renderInline, renderMarkdown } from '/markdown.js';
 import { memoryLanguage } from '/memory-text.js';
 import { activateTerminal, openTerminal, terminalList } from '/terminals.js';
@@ -480,6 +480,8 @@ function leftOffCard(data, selection) {
   const textOptions = summary ? summaryOptions([summary]) : null;
   // Read: the objective in the reading face, or a free-form summary's text.
   const read = {
+    // The user's last message from the local record: plain text (el appends a text node), never Markdown.
+    ask: () => el('div', { class: 'leftoff-ask' }, el('h4', { class: 'leftoff-eyebrow' }, t('overview.lastUserMessage')), el('p', { class: 'leftoff-read leftoff-ask-text' }, summary.lastUserMessage)),
     goal: () => el('div', { class: 'leftoff-focus' }, el('h4', { class: 'leftoff-eyebrow' }, t('overview.goal')), pagedBox(panel.markMemory(goalText(summary.goal, textOptions)), t('overview.goal'))),
     excerpt: () => el('div', { class: 'leftoff-read' }, panel.markMemory(renderMarkdown(summary.excerpt, textOptions))),
   };
@@ -488,7 +490,7 @@ function leftOffCard(data, selection) {
   // Context: when, and which summary this comes from, small and muted at the foot.
   const foot = [
     layout.foot.lastWorked ? el('span', {}, t('overview.lastWorked', { when: whenLabel(row.lastAt, row.lastDay) })) : null,
-    layout.foot.source ? el('span', {}, t('overview.fromSummary', { when: whenLabel(summary.at, dayOf(summary.at)) })) : null,
+    layout.foot.source ? el('span', {}, t(sourceKey(summary), { when: whenLabel(summary.at, dayOf(summary.at)) })) : null,
     layout.foot.since ? el('span', { class: 'leftoff-since' }, t('overview.since', { title: memory.title })) : null,
   ].filter(Boolean);
   if (foot.length) card.append(el('footer', { class: 'leftoff-foot' }, foot));

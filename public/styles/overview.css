@@ -58,6 +58,8 @@ code.leftoff-call-detail { padding: 6px 10px; background: var(--paper); border: 
 .leftoff-read .md { font-size: inherit; }
 .leftoff-read .md > :first-child { margin-top: 0; }
 .leftoff-read .md > :last-child { margin-bottom: 0; }
+/* The user's last message (local record): text as typed or pasted, its line breaks kept. */
+.leftoff-ask-text { white-space: pre-wrap; color: var(--ink-2); }
 /* A long objective reads like a book (the design's .goal-pages):
    six lines high, one column as wide as the box, the next ones beside it, scrolled one page at a
    time by public/features/overview.js; it never pushes the folds below it down. */

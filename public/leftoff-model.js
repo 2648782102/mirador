@@ -38,8 +38,20 @@ export function foldGist(markdown, kind) {
 }
 
 /**
+ * The i18n key of the foot line that names where the summary comes from: Engram's session summary,
+ * or the local record of Claude Code's hooks (src/memory/overview.ts LocalSource `from`).
+ */
+export function sourceKey(summary) {
+  if (summary?.source !== 'claude-code') return 'overview.fromSummary';
+  if (summary.from === 'compactSummary') return 'overview.fromClaudeCompact';
+  if (summary.from === 'lastUserMessage') return 'overview.fromClaudePrompt';
+  return 'overview.fromClaudeMessage';
+}
+
+/**
  * What the block shows for GET /api/overview/folder's `row`:
- * - read: 'goal' (the objective) or 'excerpt' (a free-form summary's text);
+ * - read: 'ask' (the user's last message, from the local record), then 'goal' (the objective) or
+ *   'excerpt' (a free-form summary's text);
  * - folds: next steps (open) and accomplished (closed, or open when nothing comes next);
  * - instead: 'latestMemory' or 'missing' when there is no session summary;
  * - foot: the context lines (last worked, the summary it comes from, a newer memory).
@@ -48,7 +60,8 @@ export function leftOffLayout(row) {
   const { summary, memory } = row.leftOff;
   const foot = { lastWorked: Boolean(row.lastAt), source: Boolean(summary), since: Boolean(summary && memory && memory.at > summary.at) };
   if (!summary) return { read: [], folds: [], instead: memory ? 'latestMemory' : 'missing', foot };
-  const read = summary.goal ? ['goal'] : [];
+  const read = summary.lastUserMessage ? ['ask'] : [];
+  if (summary.goal) read.push('goal');
   if (summary.excerpt) read.push('excerpt');
   const folds = [];
   if (summary.nextSteps) folds.push({ id: 'next', field: 'nextSteps', title: 'overview.nextSteps', open: true, gist: foldGist(summary.nextSteps, 'pending') });

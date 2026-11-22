@@ -8,12 +8,26 @@
 //   Notification                   waiting   prompt=<its message>; idle reminders and other notices change nothing
 //   Stop                           finished  finished=<turn id>
 // Each report also carries session=<session_id>, which Mirador records to resume with `--resume <id>`.
+// For "where it left off" (src/memory/left-off.ts) it also sends, after that report and on the same
+// connection, one `left-off` line with a documented hook field, cut to 16 KiB:
+//   UserPromptSubmit  prompt (as received: pasted text already expanded in place)
+//   Stop              last_assistant_message
+//   PostCompact       compact_summary (no attention report)
+// The server validates and stores it; this script writes nothing. `--no-left-off` (config
+// `leftOff: false`) sends the attention report only.
 // Like bin/herdr-shim it must never get in the agent's way: it prints nothing, always exits 0 and
 // gives up after one second.
 import { createConnection } from 'node:net';
 
-const MAX_INPUT_BYTES = 256 * 1024;
+/** A prompt with pasted text expanded can be large: read up to this much, then give up on the event. */
+const MAX_INPUT_BYTES = 4 * 1024 * 1024;
 const MAX_LINE_BYTES = 4096;
+/** As LEFT_OFF_MAX_TEXT_BYTES and TRUNCATED_MARK in src/memory/left-off.ts. */
+const MAX_TEXT_BYTES = 16 * 1024;
+const TRUNCATED_MARK = '…';
+const MAX_LEFT_OFF_LINE_BYTES = 128 * 1024;
+/** Which field of which event Mirador keeps for "where it left off". */
+const LEFT_OFF_FIELDS = { UserPromptSubmit: 'prompt', Stop: 'last_assistant_message', PostCompact: 'compact_summary' };
 /** Mirador refuses a token value over 512 characters, so the message is cut before that. */
 const MAX_MESSAGE = 500;
 const TIMEOUT_MS = 1000;
@@ -25,15 +39,40 @@ const SESSION_ID = /^[A-Za-z0-9][\w-]{0,127}$/;
 const WAITING = new Set(['permission_prompt', 'elicitation_dialog', 'elicitation_url_dialog', 'agent_needs_input']);
 const DEFAULT_PROMPT = 'Claude Code needs your input';
 
-/** The tokens and cleared tokens `input` reports, or null when it reports nothing. */
-function reportOf(input, seq) {
+/** The hook's event object, or null when `input` is not one. */
+function eventOf(input) {
   let event;
   try {
     event = JSON.parse(input);
   } catch {
     return null;
   }
-  if (typeof event !== 'object' || event === null || Array.isArray(event)) return null;
+  return typeof event === 'object' && event !== null && !Array.isArray(event) ? event : null;
+}
+
+/** `text` cut to MAX_TEXT_BYTES of UTF-8 between characters, with the marker when it was cut. */
+function bound(text) {
+  const bytes = Buffer.from(text, 'utf8');
+  if (bytes.length <= MAX_TEXT_BYTES) return { text, truncated: false };
+  let end = MAX_TEXT_BYTES - Buffer.byteLength(TRUNCATED_MARK);
+  while (end > 0 && (bytes[end] & 0xc0) === 0x80) end--;
+  return { text: bytes.subarray(0, end).toString('utf8') + TRUNCATED_MARK, truncated: true };
+}
+
+/** The left-off line for `event`, or null when it carries no such field or no valid session. */
+function leftOffOf(event, pane) {
+  const field = Object.hasOwn(LEFT_OFF_FIELDS, event.hook_event_name) ? LEFT_OFF_FIELDS[event.hook_event_name] : null;
+  const value = field ? event[field] : undefined;
+  if (typeof value !== 'string' || !value.trim()) return null;
+  if (typeof event.session_id !== 'string' || !SESSION_ID.test(event.session_id)) return null;
+  const { text, truncated } = bound(value);
+  const line = JSON.stringify({ v: 1, cmd: 'left-off', pane, agent: 'claude-code', event: event.hook_event_name, session: event.session_id, text, ...(truncated ? { truncated } : {}) }) + '\n';
+  return Buffer.byteLength(line) <= MAX_LEFT_OFF_LINE_BYTES ? line : null;
+}
+
+/** The tokens and cleared tokens `event` reports, or null when it reports nothing. */
+function reportOf(event, seq) {
+  if (!event) return null;
   const session = typeof event.session_id === 'string' && SESSION_ID.test(event.session_id) ? { session: event.session_id } : {};
   switch (event.hook_event_name) {
     case 'UserPromptSubmit':
@@ -52,15 +91,16 @@ function reportOf(input, seq) {
   }
 }
 
-function send(socket, line) {
+function send(socket, lines) {
   const conn = createConnection(socket);
   const timer = setTimeout(() => conn.destroy(), TIMEOUT_MS);
   conn.on('error', () => {});
   conn.on('close', () => clearTimeout(timer));
-  conn.on('connect', () => conn.end(line));
+  conn.on('connect', () => conn.end(lines));
 }
 
 function main() {
+  const leftOff = !process.argv.slice(2).includes('--no-left-off');
   const pane = process.env.HERDR_PANE_ID;
   const socket = process.env.HERDR_SOCKET_PATH;
   if (!pane || !PANE.test(pane) || !socket) return;
@@ -77,10 +117,16 @@ function main() {
   process.stdin.on('end', () => {
     // Numbered from the clock, as the bridge's reports are; one hook at a time keeps them in order.
     const seq = Date.now();
-    const report = reportOf(input, seq);
-    if (!report) return;
-    const line = JSON.stringify({ v: 1, cmd: 'report-metadata', pane, source: SOURCE, seq, ttlMs: null, ...report }) + '\n';
-    if (Buffer.byteLength(line) <= MAX_LINE_BYTES) send(socket, line);
+    const event = eventOf(input);
+    const report = reportOf(event, seq);
+    const lines = [];
+    if (report) {
+      const line = JSON.stringify({ v: 1, cmd: 'report-metadata', pane, source: SOURCE, seq, ttlMs: null, ...report }) + '\n';
+      if (Buffer.byteLength(line) <= MAX_LINE_BYTES) lines.push(line);
+    }
+    const kept = leftOff && event ? leftOffOf(event, pane) : null;
+    if (kept) lines.push(kept);
+    if (lines.length) send(socket, lines.join(''));
   });
 }
 

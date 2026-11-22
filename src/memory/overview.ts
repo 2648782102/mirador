@@ -2,6 +2,7 @@
 import { basename } from 'node:path';
 import { localDay, memoByWindow, type Observation } from './daily-summary.ts';
 import type { ProjectListing } from './folder-memory.ts';
+import { engramTime, leftOffSource, type LeftOffRecord } from './left-off.ts';
 
 /** The parts of a session summary that say where the work stopped. Each is Markdown, or null. */
 export interface LeftOffSections {
@@ -93,9 +94,24 @@ export interface OverviewFolder {
   hasMemory: boolean;
 }
 
+/**
+ * Where a summary from the local record (src/memory/left-off.ts) comes from: Claude Code, from its final
+ * message, its compaction summary, or only the user's last message (nothing from the agent yet).
+ * An Engram summary has none of these keys.
+ */
+export interface LocalSource {
+  source: 'claude-code';
+  from: 'lastMessage' | 'compactSummary' | 'lastUserMessage';
+  /** The user's last message, clipped like an excerpt; null when none was recorded. */
+  lastUserMessage: string | null;
+}
+
 export interface LeftOff {
-  /** The latest session summary's sections (or a free-form summary's excerpt), each clipped to a few lines. */
-  summary: ({ at: string } & LeftOffSections) | null;
+  /**
+   * The newest of the latest Engram session summary and the folder's local record: its sections (or a
+   * free-form text's excerpt), each clipped to a few lines, with LocalSource when it is the record.
+   */
+  summary: ({ at: string } & LeftOffSections & Partial<LocalSource>) | null;
   /** The latest memory that is not a session summary. */
   memory: { title: string; type: string; at: string } | null;
 }
@@ -209,19 +225,48 @@ function dayOf(own: ProjectDigest[]): FolderRow['day'] {
   };
 }
 
-function leftOff(own: ProjectDigest[], excerptLines: number, foldLines: number, goalLines: number, goalChars: number): LeftOff {
+function leftOff(own: ProjectDigest[], excerptLines: number, foldLines: number, goalLines: number, goalChars: number, local: LeftOffRecord | null): LeftOff {
   const summary = own.reduce<Observation | null>((latest, d) => newer(latest, d.latestSummary), null);
   const memory = own.reduce<Observation | null>((latest, d) => newer(latest, d.latestMemory), null);
-  const sections = summary && leftOffFrom(summary.content);
+  const shape = (at: string, sections: LeftOffSections) => ({
+    at,
+    goal: clip(sections.goal, goalLines, goalChars),
+    accomplished: clip(sections.accomplished, foldLines),
+    nextSteps: clip(sections.nextSteps, foldLines),
+    ...(sections.excerpt !== undefined && { excerpt: clip(sections.excerpt, excerptLines) as string }),
+  });
+  const memoryRow = memory && { title: memory.title, type: memory.type, at: lastTouched(memory) };
+  // The newest wins, judged by the text the view would show (the final message, else the compaction
+  // summary), not by the record's latest write, which can be a bare prompt. A record with only a prompt
+  // never beats Engram's summary; a tie goes to Engram. Without an Engram summary the record shows.
+  const { from, text } = local ? leftOffSource(local) : { from: null, text: null };
+  const shownAt = text ? engramTime(text.at) : null;
+  if (local && from && (!summary || (shownAt !== null && shownAt > lastTouched(summary)))) {
+    const at = engramTime(text?.at ?? local.lastUserMessage?.at ?? local.at);
+    const sections = text ? leftOffFrom(text.text) : { goal: null, accomplished: null, nextSteps: null };
+    const asked = local.lastUserMessage ? clip(local.lastUserMessage.text, excerptLines) : null;
+    return { summary: { ...shape(at, sections), source: local.agent, from, lastUserMessage: asked }, memory: memoryRow };
+  }
+  return { summary: summary && shape(lastTouched(summary), leftOffFrom(summary.content)), memory: memoryRow };
+}
+
+/** The local record as plain mode shows it (GET /api/folder/git `leftOff`): its texts as text, each clipped to `lines`. */
+export interface PlainLeftOff extends Omit<LocalSource, 'lastUserMessage'> {
+  /** ISO time of the text shown (the user's message when the agent has said nothing yet). */
+  at: string;
+  /** The final message or the compaction summary; null when only the user's message was recorded. */
+  text: string | null;
+  lastUserMessage: string | null;
+}
+
+export function plainLeftOff(record: LeftOffRecord, lines = 12): PlainLeftOff {
+  const { from, text } = leftOffSource(record);
   return {
-    summary: summary && sections && {
-      at: lastTouched(summary),
-      goal: clip(sections.goal, goalLines, goalChars),
-      accomplished: clip(sections.accomplished, foldLines),
-      nextSteps: clip(sections.nextSteps, foldLines),
-      ...(sections.excerpt !== undefined && { excerpt: clip(sections.excerpt, excerptLines) as string }),
-    },
-    memory: memory && { title: memory.title, type: memory.type, at: lastTouched(memory) },
+    source: record.agent,
+    from,
+    at: text?.at ?? record.lastUserMessage?.at ?? record.at,
+    text: text ? clip(text.text, lines) : null,
+    lastUserMessage: record.lastUserMessage ? clip(record.lastUserMessage.text, lines) : null,
   };
 }
 
@@ -249,17 +294,23 @@ export function buildWorkspaceOverview(input: {
   goalLines?: number;
   /** Characters kept of a summary's Goal (default 400). Infinity with foldLines and goalLines keeps its sections whole. */
   goalChars?: number;
+  /** The folder's local left-off record (src/memory/left-off.ts), or null; none by default. */
+  localLeftOff?: (folder: OverviewFolder) => LeftOffRecord | null;
 }): { rows: FolderRow[]; summary: WorkspaceSummary } {
   const digests = windowDigest(input.observations, JSON.stringify([input.date, input.timeZone]));
   const rows = input.folders.map((folder): FolderRow => {
     const own = folder.projects.map((name) => digests.get(name)).filter((d): d is ProjectDigest => !!d);
-    const lastAt = own.reduce<string | null>((max, d) => (max === null || d.lastAt > max ? d.lastAt : max), null);
+    const local = input.localLeftOff?.(folder) ?? null;
+    const engramAt = own.reduce<string | null>((max, d) => (max === null || d.lastAt > max ? d.lastAt : max), null);
+    // Last worked counts the local record too.
+    const localAt = local && engramTime(local.at);
+    const lastAt = localAt !== null && (engramAt === null || localAt > engramAt) ? localAt : engramAt;
     return {
       ...folder,
       lastAt,
       lastDay: lastAt === null ? null : localDay(lastAt, input.timeZone),
-      beyondWindow: folder.hasMemory && lastAt === null && input.windowFull,
-      leftOff: leftOff(own, input.excerptLines ?? 12, input.foldLines ?? input.excerptLines ?? 12, input.goalLines ?? 2, input.goalChars ?? 400),
+      beyondWindow: folder.hasMemory && engramAt === null && input.windowFull,
+      leftOff: leftOff(own, input.excerptLines ?? 12, input.foldLines ?? input.excerptLines ?? 12, input.goalLines ?? 2, input.goalChars ?? 400, local),
       day: dayOf(own),
     };
   });
