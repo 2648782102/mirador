@@ -25,7 +25,7 @@
 // down the other ones, each with its icon (agent-picker.js,
 // icons/agents.js); with one, rows stay as they were.
 import { $, api, el, emit, errorText, getLanguage, on, prefs, rowActionList, sameFolder, select, setWorkspaces, slot, state, t, workspaceById } from '/core.js';
-import { openDialog, showAlert } from '/dialog.js';
+import { confirmDialog, openDialog, showAlert } from '/dialog.js';
 import { plural } from '/i18n.js';
 import { agentLabel, modeOf, showsExtra } from '/mode-model.js';
 import { MAX_INSTRUCTION, checkInstruction, delegateBody, summarizeDelegation } from '/features/delegate-model.js';
@@ -41,7 +41,7 @@ import { revealPlan } from '/features/tree-reveal-model.js';
 import { sleepingAgents } from '/features/sleeping.js';
 import { activateTerminal, activePlace, activeTerminalId, newTerminalSize, openTerminal, setStateFilter, showOpenedTerminals, terminalList } from '/terminals.js';
 import { openGitPanel } from '/git-panel.js';
-import { registerPanelView } from '/features/summary.js';
+import { refreshPanel, registerPanelView } from '/features/summary.js';
 import { plainLeftOffView } from '/features/plain-left-off.js';
 import { changesView } from '/features/changes-panel.js';
 import { closesMenu, menuFocusIndex, moreButton, moreTools, rowTools } from '/workspace-tools.js';
@@ -1523,7 +1523,7 @@ async function removeWorkspace(workspaceId) {
 
 export async function init() {
   // Plain mode's "Where it left off" (git and NOTES.md, no Engram) in the panel, where gentle-deck shows overview.js's.
-  registerPanelView(plainLeftOffView({ api, el, t, isPlain: () => modeOf(state.config) === 'plain' }));
+  registerPanelView(plainLeftOffView({ api, el, t, isPlain: () => modeOf(state.config) === 'plain', confirm: confirmDialog, refresh: refreshPanel }));
   // The read-only "Changes" view (git diff against HEAD), in both modes.
   registerPanelView(changesView({ api, el, t }));
   $('#ws-add').addEventListener('click', addWorkspace);

@@ -4,8 +4,10 @@
 // GET /api/folder/git (src/http/routes/git-status.ts). It never calls an Engram route, so it works
 // without gentle-shell, pi or Engram. It sits where gentle-deck shows the Engram "Dónde quedó"
 // (public/features/overview.js, a 'memory' extra plain mode leaves out), with the same view id and
-// label, so a folder still opens on it. No imports: public/features/workspaces.js passes api, el
-// and t, and test/plain-left-off.test.ts renders it in Node with a fake el.
+// label, so a folder still opens on it. No imports: public/features/workspaces.js passes api, el,
+// t, confirm and refresh, and test/plain-left-off.test.ts renders it in Node with a fake el.
+// The record's block has Forget (DELETE /api/folder/left-off), asked first with `confirm`, then
+// the panel reloads (`refresh`); without both, no Forget.
 
 /** What a two-letter porcelain v1 code means, as a word: the list shows it as text, not only as a code. */
 export function changeKind(code) {
@@ -41,9 +43,10 @@ const SOURCE_KEYS = { lastMessage: 'overview.fromClaudeMessage', compactSummary:
 /**
  * The panel view (public/features/summary.js registerPanelView) for a folder in plain mode.
  * `deps` = { api, el, t } from /core.js and `isPlain()`, read on each selection: gentle-deck never
- * offers it, and it needs no gentle extra, so plain mode keeps it.
+ * offers it, and it needs no gentle extra, so plain mode keeps it. `confirm` (/dialog.js
+ * confirmDialog) and `refresh` (/features/summary.js refreshPanel) give the record's Forget.
  */
-export function plainLeftOffView({ api, el, t, isPlain }) {
+export function plainLeftOffView({ api, el, t, isPlain, confirm, refresh }) {
   const plural = (key, count) => t(`${key}.${count === 1 ? 'one' : 'other'}`, { count });
   const time = (iso) => el('time', { datetime: iso }, shortDate(iso));
   const line = (label, ...value) => el('p', { class: 'plain-git-line' }, el('span', { class: 'plain-git-label' }, label), ' ', ...value);
@@ -83,8 +86,31 @@ export function plainLeftOffView({ api, el, t, isPlain }) {
     return el('section', { class: 'plain-leftoff', 'aria-label': t('plainLeftOff.gitTitle') }, title, head, last, ...changesPart(git.changes), ...recent);
   }
 
+  // Forget, as gentle-deck's block: asks first, removes the record, reloads the panel. A failure
+  // shows in place of the button's line.
+  function forgetButton(selection) {
+    if (!confirm || !refresh) return null;
+    let busy = false;
+    const onclick = async () => {
+      if (busy) return;
+      const sure = await confirm({ title: t('overview.forgetTitle'), message: t('overview.forgetConfirm'), confirmLabel: t('overview.forget'), cancelLabel: t('overview.cancel'), danger: true });
+      if (!sure) return;
+      busy = true;
+      try {
+        await api('DELETE', `/api/folder/left-off?${new URLSearchParams({ ws: selection.ws, rel: selection.rel })}`);
+        refresh();
+      } catch (error) {
+        line.replaceChildren?.(t('overview.forgetFailed', { error: error?.message ?? String(error) }));
+      } finally {
+        busy = false;
+      }
+    };
+    const line = el('p', { class: 'plain-git-more', role: 'status' });
+    return [el('button', { type: 'button', class: 'btn sm ghost', title: t('overview.forgetHint'), onclick }, t('overview.forget')), line];
+  }
+
   // The local record: the user's last message, then the agent's text, both as text in a pre, never markup.
-  function leftOffPart(leftOff) {
+  function leftOffPart(leftOff, selection) {
     const key = SOURCE_KEYS[leftOff.from] ?? SOURCE_KEYS.lastMessage;
     return el(
       'section',
@@ -93,6 +119,7 @@ export function plainLeftOffView({ api, el, t, isPlain }) {
       leftOff.lastUserMessage ? [el('h4', { class: 'leftoff-eyebrow' }, t('overview.lastUserMessage')), el('pre', { class: 'plain-notes' }, leftOff.lastUserMessage)] : null,
       leftOff.text ? el('pre', { class: 'plain-notes' }, leftOff.text) : null,
       el('p', { class: 'plain-git-more', title: leftOff.at }, t(key, { when: localTime(leftOff.at) })),
+      forgetButton(selection),
     );
   }
 
@@ -117,7 +144,7 @@ export function plainLeftOffView({ api, el, t, isPlain }) {
       setHeading(t('overview.leftOff'));
       const data = await api('GET', `/api/folder/git?${new URLSearchParams({ ws: selection.ws, rel: selection.rel })}`);
       setHeading(t('overview.leftOff'), data.cwd);
-      return [data.leftOff ? leftOffPart(data.leftOff) : null, gitPart(data.git), notesPart(data.notes)].filter(Boolean);
+      return [data.leftOff ? leftOffPart(data.leftOff, selection) : null, gitPart(data.git), notesPart(data.notes)].filter(Boolean);
     },
   };
 }

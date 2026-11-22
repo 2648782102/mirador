@@ -11,10 +11,11 @@ import { shellQuote } from '../terminals/registry.ts';
  * reports through the herdr socket as the gentle-shell bridge does: a submitted prompt or a finished
  * tool call is working, a Notification that waits for an answer is waiting, Stop is finished, and
  * each report carries the hook's `session_id`, which Mirador records to resume with `--resume <id>`.
- * The script also forwards the prompt, the final message and PostCompact's summary to the server for
- * "where it left off" (src/memory/left-off.ts), unless it runs with `--no-left-off` (config `leftOff: false`).
+ * The script also forwards the prompt, the final message, PostCompact's summary and SessionEnd's reason
+ * to the server for "where it left off" (src/memory/left-off.ts), unless it runs with `--no-left-off`
+ * (config `leftOff: false`). SessionEnd hooks share a short budget; the script gives up after one second.
  */
-export const CLAUDE_HOOK_EVENTS = ['UserPromptSubmit', 'PostToolUse', 'Notification', 'Stop', 'PostCompact'] as const;
+export const CLAUDE_HOOK_EVENTS = ['UserPromptSubmit', 'PostToolUse', 'Notification', 'Stop', 'PostCompact', 'SessionEnd'] as const;
 /**
  * Seconds Claude gives a hook; the script gives up after one. The hooks run in the foreground, so
  * Claude starts them in order and their reports (numbered from the clock) arrive in order.

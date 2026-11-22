@@ -4,7 +4,9 @@
 // and writes one 0600 record per folder under <state>/mirador/left-off, and GET /api/overview/folder
 // and GET /api/folder/git show it, newest first against a fake Engram that can be switched off.
 // Rejected lines leave the store unchanged; expired records go at start; `leftOff: false` stores
-// nothing. The real server runs with a scratch HOME, runtime, state and config dir; no real agent runs.
+// nothing. SessionEnd marks the record's end; Forget (the block's, a sleeping agent's, a removed
+// workspace) removes records; GET /api/overview's rows use the record too.
+// The real server runs with a scratch HOME, runtime, state and config dir; no real agent runs.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -18,6 +20,7 @@ import { scratchBase } from './helpers/scratch.ts';
 const APP_DIR = fileURLToPath(new URL('..', import.meta.url));
 const S1 = '0f8e2a4c-1b7d-4e5f-9a6b-3c2d1e0f9a8b';
 const S2 = '7c1d9e3f-5a2b-4c8d-8e6f-1a0b2c3d4e5f';
+const S3 = '3a9b8c7d-6e5f-4a3b-9c2d-1e0f9a8b7c6d';
 const BOUND = 16 * 1024;
 
 let scratch: string;
@@ -25,6 +28,7 @@ let base: string;
 let server: ChildProcess | undefined;
 let output = '';
 let api: (method: string, path: string, body?: unknown) => Promise<Response>;
+let token = '';
 let fakeEngram: Server;
 const engram = { down: true, observations: [] as Array<Record<string, unknown>> };
 
@@ -132,7 +136,7 @@ async function start(config: Record<string, unknown> = {}): Promise<void> {
   const boot = await fetch(`${base}/bootstrap`, { method: 'POST', headers: { authorization: `Bearer ${state.launchSecret}` } });
   const nonce = new URL(((await boot.json()) as { url: string }).url).hash.replace('#launch=', '');
   const session = await fetch(`${base}/api/session`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ nonce }) });
-  const token = ((await session.json()) as { token: string }).token;
+  token = ((await session.json()) as { token: string }).token;
   api = (method, path, body) =>
     fetch(`${base}${path}`, { method, headers: { origin: base, authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
 }
@@ -174,7 +178,8 @@ setInterval(() => {
 
 before(async () => {
   scratch = await realpath(await mkdtemp(join(scratchBase(), 'mirador-left-off-')));
-  for (const rel of ['alpha', 'beta', 'gamma', 'delta']) await mkdir(join(scratch, 'root', rel), { recursive: true });
+  for (const rel of ['alpha', 'beta', 'gamma', 'delta', 'epsilon']) await mkdir(join(scratch, 'root', rel), { recursive: true });
+  await mkdir(join(scratch, 'other', 'one'), { recursive: true });
   await mkdir(home(), { recursive: true });
   await mkdir(join(scratch, 'bin'), { recursive: true });
   await writeFile(join(scratch, 'bin', 'claude'), FAKE_CLAUDE, { mode: 0o755 });
@@ -186,7 +191,11 @@ before(async () => {
     res.setHeader('content-type', 'application/json');
     if (engram.down) return void res.writeHead(500).end('{}');
     if (url.pathname === '/project/current') return void res.end(JSON.stringify({ project: basename(url.searchParams.get('cwd') ?? ''), project_source: 'git_remote' }));
-    if (url.pathname === '/projects') return void res.end(JSON.stringify({ projects: [] }));
+    if (url.pathname === '/projects') {
+      const names = [...new Set(engram.observations.map((o) => o.project as string))];
+      return void res.end(JSON.stringify({ projects: names.map((name) => ({ name, observation_count: 1, directories: [] })) }));
+    }
+    if (url.pathname === '/observations/recent' && url.searchParams.get('all_projects') === 'true') return void res.end(JSON.stringify(engram.observations));
     if (url.pathname === '/observations/recent') {
       const own = engram.observations.filter((o) => o.project === url.searchParams.get('project'));
       if (!own.length) return void res.writeHead(404).end(JSON.stringify({ error: 'project not found' }));
@@ -228,7 +237,7 @@ test('the hooks hand the prompt, the final message and the compaction summary to
   await start();
   alpha = await open('alpha');
   const settings = JSON.parse(await readFile(settingsPath(), 'utf8')) as { hooks: Record<string, Array<{ hooks: Array<{ command: string }> }>> };
-  for (const event of ['UserPromptSubmit', 'Stop', 'PostCompact']) assert.match(settings.hooks[event]?.[0]?.hooks[0]?.command ?? '', /bin\/claude-hook'?$/, event);
+  for (const event of ['UserPromptSubmit', 'Stop', 'PostCompact', 'SessionEnd']) assert.match(settings.hooks[event]?.[0]?.hooks[0]?.command ?? '', /bin\/claude-hook'?$/, event);
 
   // A typed command arrives as typed and is the user's last message.
   await fire(alpha.id, 'UserPromptSubmit', { prompt: '/deploy staging' });
@@ -254,9 +263,20 @@ test('the hooks hand the prompt, the final message and the compaction summary to
   );
   assert.match(stopped.at, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/, 'in Engram\'s time format, so the view compares and shows it the same way');
 
+  // A compaction after the final message is the newer text: it shows, in both modes.
   await fire(alpha.id, 'PostCompact', { trigger: 'auto', compact_summary: 'The conversation so far, compacted.' });
   await waitFor(async () => ((await recordOf('alpha'))?.record.compactSummary ? true : undefined));
-  assert.equal((await folderView('alpha')).body.row.leftOff.summary.from, 'lastMessage', 'the final message wins over the compaction summary');
+  const compactedAlpha = (await folderView('alpha')).body.row.leftOff.summary;
+  assert.deepEqual([compactedAlpha.from, compactedAlpha.excerpt, compactedAlpha.lastUserMessage], ['compactSummary', 'The conversation so far, compacted.', '/deploy staging'], 'the newer compaction summary wins over the final message');
+  const plainCompacted = await plainView('alpha');
+  assert.deepEqual([plainCompacted.source, plainCompacted.from, plainCompacted.text, plainCompacted.lastUserMessage], ['claude-code', 'compactSummary', 'The conversation so far, compacted.', '/deploy staging']);
+  // A final message after the compaction wins again.
+  await fire(alpha.id, 'Stop', { stop_hook_active: false, last_assistant_message: 'Deployed.\n\n## Accomplished\n- wired the hook\n\n## Next steps\n- write the docs' });
+  await waitFor(async () => {
+    const { record } = (await recordOf('alpha')) ?? {};
+    return record && Date.parse(record.lastMessage.at) > Date.parse(record.compactSummary.at) ? true : undefined;
+  });
+  assert.equal((await folderView('alpha')).body.row.leftOff.summary.from, 'lastMessage', 'the newer final message wins over the compaction summary');
   const plain = await plainView('alpha');
   assert.deepEqual([plain.source, plain.from, plain.text, plain.lastUserMessage], ['claude-code', 'lastMessage', 'Deployed.\n\n## Accomplished\n- wired the hook\n\n## Next steps\n- write the docs', '/deploy staging']);
 
@@ -322,6 +342,30 @@ test('rejected lines leave the store unchanged; an over-long text from the socke
   for (const [name, text] of Object.entries(before)) assert.equal(after[name], text, `${name} is unchanged`);
 });
 
+test('SessionEnd stores its time and reason on the session\'s record; another session\'s end or a bad reason changes nothing', async () => {
+  const before = (await recordOf('alpha'))!;
+  const bytes = await readFile(before.path, 'utf8');
+  // Another session's end, then a bad reason, through the hooks; then one valid line for gamma on the socket:
+  // writes run in order, so once gamma's text is stored, the two before it were handled.
+  await fire(alpha.id, 'SessionEnd', { session_id: S2, reason: 'clear' });
+  await sendLines([leftOffLine({ pane: alpha.id, event: 'SessionEnd', text: undefined, reason: 'Not A Reason' }), leftOffLine({ pane: gamma.id, text: 'gamma after the ends' })]);
+  await waitFor(async () => ((await recordOf('gamma'))?.record.lastMessage.text === 'gamma after the ends' ? true : undefined));
+  assert.equal(await readFile(before.path, 'utf8'), bytes, 'alpha\'s record is byte-identical');
+
+  const sent = Date.now();
+  await fire(alpha.id, 'SessionEnd', { reason: 'prompt_input_exit' });
+  const { record } = await waitFor(async () => {
+    const found = await recordOf('alpha');
+    return found?.record.endReason ? found : undefined;
+  });
+  assert.equal(record.endReason, 'prompt_input_exit');
+  assert.match(record.endedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/, 'ISO, like at');
+  assert.ok(Date.parse(record.endedAt) >= sent - 1000 && record.endedAt === record.at, 'the server\'s time of the end');
+  for (const field of ['sessionId', 'lastUserMessage', 'lastMessage', 'compactSummary']) assert.deepEqual(record[field], before.record[field], `${field} unchanged`);
+  const shown = (await folderView('alpha')).body.row.leftOff.summary;
+  assert.deepEqual([shown.from, shown.endedAt, shown.endReason], ['lastMessage', undefined, undefined], 'stored only: the view shows the same block');
+});
+
 test('a newer Engram summary wins over the record, an older one loses, and the source says which', async (t) => {
   // A failure here must not leave Engram up for the tests after it.
   t.after(() => {
@@ -340,6 +384,105 @@ test('a newer Engram summary wins over the record, an older one loses, and the s
   engram.observations = [];
   const none = await folderView('delta');
   assert.equal(none.status, 503, 'Engram down and no record: unchanged');
+});
+
+test('the workspace summary rows use the record too: newest wins per row, and Engram down still answers when a record exists', async (t) => {
+  t.after(() => {
+    engram.down = true;
+    engram.observations = [];
+  });
+  const rows = async (ws = 'dev') => {
+    const response = await api('GET', `/api/overview?ws=${ws}`);
+    return { status: response.status, body: (await response.json()) as any };
+  };
+  const down = await rows();
+  assert.equal(down.status, 200, JSON.stringify(down.body));
+  assert.equal(down.body.engramUnavailable, true);
+  const byRel = (body: any) => Object.fromEntries(body.rows.map((row: any) => [row.rel, row]));
+  const fromRecord = byRel(down.body);
+  assert.deepEqual(Object.keys(fromRecord).sort(), ['alpha', 'beta', 'delta', 'epsilon', 'gamma']);
+  assert.deepEqual([fromRecord.alpha.leftOff.summary.source, fromRecord.alpha.leftOff.summary.from, fromRecord.alpha.leftOff.summary.nextSteps], ['claude-code', 'lastMessage', '- write the docs']);
+  assert.ok(fromRecord.alpha.leftOff.summary.lastUserMessage.startsWith('Look at this:') && fromRecord.alpha.leftOff.summary.lastUserMessage.length <= 2001, 'the user\'s message, clipped like the row\'s excerpt');
+  assert.deepEqual([fromRecord.beta.leftOff.summary.from, fromRecord.beta.leftOff.summary.nextSteps], ['compactSummary', '- resume the migration']);
+  assert.equal(fromRecord.delta.leftOff.summary, null, 'no record: nothing, as before');
+  assert.match(fromRecord.alpha.lastAt, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/, 'last worked counts the record');
+  assert.equal(down.body.rows[down.body.rows.length - 1].lastAt, null, 'folders without memory or record last');
+
+  // Engram up: a newer Engram summary wins alpha's row, beta keeps its record.
+  engram.down = false;
+  engram.observations = [{ id: 3, type: 'session_summary', title: 'Session summary', project: 'alpha', created_at: '2999-01-01 10:00:00', content: '## Goal\nThe newest goal\n## Next Steps\n- new step' }];
+  const up = await rows();
+  assert.equal(up.status, 200);
+  assert.equal(up.body.engramUnavailable, undefined);
+  const mixed = byRel(up.body);
+  assert.deepEqual(mixed.alpha.leftOff.summary, { at: '2999-01-01 10:00:00', goal: 'The newest goal', accomplished: null, nextSteps: '- new step' });
+  assert.equal(mixed.beta.leftOff.summary.source, 'claude-code');
+  assert.equal(mixed.alpha.day.memories, 0);
+});
+
+test('Forget on the block removes the folder\'s record only, idempotently, behind the same checks as the GET', async () => {
+  const gammaRecord = (await recordOf('gamma'))!;
+  const before = await snapshot();
+  const forget = (query: string) => api('DELETE', `/api/folder/left-off?${query}`);
+  // The origin check of every mutating route: no Origin, no delete.
+  const crossSite = await fetch(`${base}/api/folder/left-off?ws=dev&rel=gamma`, { method: 'DELETE', headers: { authorization: `Bearer ${token}` } });
+  assert.equal(crossSite.status, 403);
+  const noToken = await fetch(`${base}/api/folder/left-off?ws=dev&rel=gamma`, { method: 'DELETE', headers: { origin: base } });
+  assert.equal(noToken.status, 401);
+  const unknown = await forget('ws=nope&rel=gamma');
+  assert.deepEqual([unknown.status, ((await unknown.json()) as any).code], [404, 'workspace_not_found']);
+  const outside = await forget('ws=dev&rel=../../etc');
+  assert.deepEqual([outside.status, ((await outside.json()) as any).code], [400, 'folder_invalid']);
+  assert.deepEqual(await snapshot(), before, 'refused: nothing removed');
+
+  const done = await forget('ws=dev&rel=gamma');
+  assert.equal(done.status, 204);
+  assert.equal(await done.text(), '');
+  assert.equal(await exists(gammaRecord.path), false, 'gamma\'s record is gone');
+  const { [gammaRecord.path.slice(leftOffDir().length + 1)]: _gone, ...rest } = before;
+  assert.deepEqual(await snapshot(), rest, 'every other record unchanged');
+  assert.equal((await forget('ws=dev&rel=gamma')).status, 204, 'again: 204, nothing to remove');
+  assert.equal((await folderView('gamma')).status, 503, 'the view reloads to what Engram says: here, down and no record, as before');
+  assert.equal(await plainView('gamma'), undefined, 'plain mode shows no record either');
+});
+
+test('forgetting a folder\'s sleeping Claude Code agent removes its record', async () => {
+  const epsilon = await open('epsilon');
+  await fire(epsilon.id, 'UserPromptSubmit', { session_id: S3, prompt: 'last task' });
+  await fire(epsilon.id, 'Stop', { session_id: S3, last_assistant_message: 'All done.' });
+  const { path } = await waitFor(async () => {
+    const found = await recordOf('epsilon');
+    return found?.record.lastMessage ? found : undefined;
+  });
+  // A finished agent sleeps across a restart.
+  await stop();
+  await start();
+  const sleeper = await waitFor(async () => {
+    const { agents } = (await (await api('GET', '/api/terminals/sleeping')).json()) as { agents: Array<{ id: string; rel: string; agent: string | null }> };
+    return agents.find((agent) => agent.rel === 'epsilon');
+  });
+  assert.equal(sleeper.agent, 'claude-code');
+  const before = await snapshot();
+  assert.equal((await api('DELETE', `/api/terminals/sleeping/${sleeper.id}`)).status, 204);
+  assert.equal(await exists(path), false, 'its record is gone');
+  const { [path.slice(leftOffDir().length + 1)]: _gone, ...rest } = before;
+  assert.deepEqual(await snapshot(), rest, 'every other record unchanged');
+  assert.equal((await api('DELETE', `/api/terminals/sleeping/${sleeper.id}`)).status, 404, 'PRESERVE: forgetting it again is 404 as before');
+});
+
+test('removing a workspace removes its left-off folder and nothing else; its summary keeps the Engram-down 503 without records', async () => {
+  const added = await api('POST', '/api/workspaces', { root: join(scratch, 'other'), name: 'other' });
+  assert.equal(added.status, 201);
+  const { id } = (await added.json()) as { id: string };
+  const none = await api('GET', `/api/overview?ws=${id}`);
+  assert.equal(none.status, 503, 'Engram down and no record in the workspace: unchanged');
+  await mkdir(join(leftOffDir(), id), { recursive: true, mode: 0o700 });
+  await writeFile(join(leftOffDir(), id, 'planted.claude-code.json'), '{}', { mode: 0o600 });
+  const dev = Object.fromEntries(Object.entries(await snapshot()).filter(([name]) => name.startsWith('dev/')));
+  assert.equal((await api('DELETE', `/api/workspaces/${id}`)).status, 204);
+  assert.equal(await exists(join(leftOffDir(), id)), false, 'its folder is gone');
+  assert.deepEqual(await snapshot(), dev, 'the other workspace\'s records unchanged');
+  assert.equal((await api('DELETE', `/api/workspaces/${id}`)).status, 404, 'PRESERVE: an unknown workspace is 404 as before');
 });
 
 test('expired records are removed at start, by the default 30 days and by leftOffDays', async () => {

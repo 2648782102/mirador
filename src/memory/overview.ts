@@ -236,9 +236,10 @@ function leftOff(own: ProjectDigest[], excerptLines: number, foldLines: number, 
     ...(sections.excerpt !== undefined && { excerpt: clip(sections.excerpt, excerptLines) as string }),
   });
   const memoryRow = memory && { title: memory.title, type: memory.type, at: lastTouched(memory) };
-  // The newest wins, judged by the text the view would show (the final message, else the compaction
-  // summary), not by the record's latest write, which can be a bare prompt. A record with only a prompt
-  // never beats Engram's summary; a tie goes to Engram. Without an Engram summary the record shows.
+  // The newest wins, judged by the text the view would show (the newer of the final message and the
+  // compaction summary, leftOffSource), not by the record's latest write, which can be a bare prompt or
+  // the session's end. A record with only a prompt never beats Engram's summary; a tie goes to Engram.
+  // Without an Engram summary the record shows.
   const { from, text } = local ? leftOffSource(local) : { from: null, text: null };
   const shownAt = text ? engramTime(text.at) : null;
   if (local && from && (!summary || (shownAt !== null && shownAt > lastTouched(summary)))) {
@@ -254,7 +255,7 @@ function leftOff(own: ProjectDigest[], excerptLines: number, foldLines: number, 
 export interface PlainLeftOff extends Omit<LocalSource, 'lastUserMessage'> {
   /** ISO time of the text shown (the user's message when the agent has said nothing yet). */
   at: string;
-  /** The final message or the compaction summary; null when only the user's message was recorded. */
+  /** The newer of the final message and the compaction summary; null when only the user's message was recorded. */
   text: string | null;
   lastUserMessage: string | null;
 }

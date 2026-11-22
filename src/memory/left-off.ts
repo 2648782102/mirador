@@ -1,18 +1,22 @@
 // "Where it left off" without Engram: a bounded local record of what Claude Code's own hooks hand
-// over. bin/claude-hook forwards three documented hook fields (https://code.claude.com/docs/en/hooks)
+// over. bin/claude-hook forwards four documented hook fields (https://code.claude.com/docs/en/hooks)
 // over Mirador's herdr socket as `left-off` lines:
 //   UserPromptSubmit  prompt                  → lastUserMessage (as received: pasted text already expanded)
 //   Stop              last_assistant_message  → lastMessage
 //   PostCompact       compact_summary         → compactSummary
+//   SessionEnd        reason                  → endReason, with endedAt (the server's time); no text
+// A SessionEnd only marks the record of its own session: with none, or another session's, it writes
+// nothing. A later text of the same session (a resumed session) clears the end.
 // The hook writes nothing itself: the server validates each line (its shape, a running agent
 // terminal, the session id, the size) and writes the record, one per (workspace, folder, agent),
 // at <stateDir>/left-off/<workspace>/<hash of rel>.claude-code.json, 0600 in 0700 folders, through
 // writePrivateFile (atomic). Mirador never reads Claude Code's configuration or transcripts.
 // The text is untrusted (model output, the user's own pastes): it is stored and shown only as text,
 // never logged, never sent anywhere. Records older than `leftOffDays` are removed at start and on
-// writes, and never read back.
+// writes, and never read back. Forget removes one (deleteLeftOff: the block's Forget, a forgotten
+// sleeping Claude Code agent) or a workspace's folder of them (deleteLeftOffWorkspace: a removed workspace).
 import { createHash } from 'node:crypto';
-import { chmod, mkdir, readFile, readdir, rm, rmdir, stat } from 'node:fs/promises';
+import { chmod, mkdir, readFile, readdir, rm, rmdir, stat, unlink } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { writePrivateFile } from '../night/schedule.ts';
 import type { TerminalInfo } from '../terminals/registry.ts';
@@ -35,7 +39,14 @@ const DAY_MS = 24 * 60 * 60_000;
 const EVENT_FIELDS = { UserPromptSubmit: 'lastUserMessage', Stop: 'lastMessage', PostCompact: 'compactSummary' } as const;
 type Field = (typeof EVENT_FIELDS)[keyof typeof EVENT_FIELDS];
 const FIELDS: Field[] = ['lastUserMessage', 'lastMessage', 'compactSummary'];
-const LINE_KEYS = new Set(['v', 'cmd', 'pane', 'agent', 'event', 'session', 'text', 'truncated']);
+/** The event whose line carries a `reason` and no text. */
+const END_EVENT = 'SessionEnd';
+const LINE_KEYS = new Set(['v', 'cmd', 'pane', 'agent', 'event', 'session', 'text', 'truncated', 'reason']);
+/**
+ * SessionEnd's `reason` as Claude Code words it (clear, resume, logout, prompt_input_exit, other, …):
+ * lowercase words joined by `_`, at most 64 characters. Anything else is refused (bin/claude-hook checks the same).
+ */
+export const END_REASON = /^[a-z][a-z0-9_]{0,63}$/;
 const PANE = /^[\w-]{1,64}$/;
 /** As SESSION_ID in src/agents/catalog.ts and bin/claude-hook. */
 const SESSION_ID = /^[A-Za-z0-9][\w-]{0,127}$/;
@@ -62,6 +73,10 @@ export interface LeftOffRecord {
   lastUserMessage: LeftOffText | null;
   lastMessage: LeftOffText | null;
   compactSummary: LeftOffText | null;
+  /** ISO time the server received the session's SessionEnd; absent until then (and in older records). */
+  endedAt?: string;
+  /** SessionEnd's `reason` (END_REASON); present exactly when endedAt is. */
+  endReason?: string;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -85,10 +100,35 @@ export function leftOffDir(stateDir: string): string {
   return join(stateDir, 'left-off');
 }
 
+/** The folder of workspace `workspaceId`'s records: the id itself when plain, else hashed; always one level below `dir`. */
+function workspaceFolder(dir: string, workspaceId: string): string {
+  return join(dir, SAFE_NAME.test(workspaceId) ? workspaceId : `ws-${sha(workspaceId).slice(0, 16)}`);
+}
+
 /** The record file of folder `rel` of workspace `workspaceId`: the id as a folder (hashed unless plain), the folder hashed. */
 export function recordFile(dir: string, workspaceId: string, rel: string): string {
-  const workspace = SAFE_NAME.test(workspaceId) ? workspaceId : `ws-${sha(workspaceId).slice(0, 16)}`;
-  return join(dir, workspace, `${sha(rel).slice(0, 32)}.${LEFT_OFF_AGENT}.json`);
+  return join(workspaceFolder(dir, workspaceId), `${sha(rel).slice(0, 32)}.${LEFT_OFF_AGENT}.json`);
+}
+
+/**
+ * Forget: removes the record of folder `rel` (its recordFile, nothing else) and its workspace folder
+ * when that is left empty. True when there was one; idempotent.
+ */
+export async function deleteLeftOff(dir: string, workspaceId: string, rel: string): Promise<boolean> {
+  const file = recordFile(dir, workspaceId, rel);
+  try {
+    await unlink(file);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return false;
+    throw error;
+  }
+  await rmdir(dirname(file)).catch(() => undefined);
+  return true;
+}
+
+/** A removed workspace: removes its folder of records (workspaceFolder), whatever it holds; idempotent. */
+export async function deleteLeftOffWorkspace(dir: string, workspaceId: string): Promise<void> {
+  await rm(workspaceFolder(dir, workspaceId), { recursive: true, force: true });
 }
 
 function validText(value: unknown): value is LeftOffText {
@@ -114,6 +154,11 @@ function parseRecord(text: string): LeftOffRecord | null {
   if (typeof value.workspaceId !== 'string' || typeof value.rel !== 'string' || typeof value.sessionId !== 'string') return null;
   if (typeof value.at !== 'string' || !Number.isFinite(Date.parse(value.at))) return null;
   for (const field of FIELDS) if (value[field] !== null && !validText(value[field])) return null;
+  // The end of the session: both or neither (a record written before SessionEnd was kept has neither).
+  if (value.endedAt !== undefined || value.endReason !== undefined) {
+    if (typeof value.endedAt !== 'string' || !Number.isFinite(Date.parse(value.endedAt))) return null;
+    if (typeof value.endReason !== 'string' || !END_REASON.test(value.endReason)) return null;
+  }
   return value as unknown as LeftOffRecord;
 }
 
@@ -161,14 +206,10 @@ export async function sweepLeftOff(dir: string, options: { days: number; now?: n
   return removed;
 }
 
-/** A valid left-off line. */
-interface LeftOffLine {
-  pane: string;
-  field: Field;
-  session: string;
-  text: string;
-  truncated: boolean;
-}
+/** A valid left-off line: one text, or the end of the session. */
+type LeftOffLine =
+  | { pane: string; session: string; field: Field; text: string; truncated: boolean }
+  | { pane: string; session: string; field: 'end'; reason: string };
 
 /**
  * The left-off line in `line`: undefined when it is no left-off line at all (an attention report),
@@ -185,10 +226,15 @@ export function parseLeftOffLine(line: string): LeftOffLine | null | undefined {
   }
   if (!isRecord(value) || value.cmd !== LEFT_OFF_CMD) return undefined;
   if (value.v !== 1 || !Object.keys(value).every((key) => LINE_KEYS.has(key))) return null;
-  const { pane, agent, event, session, text, truncated = false } = value;
+  const { pane, agent, event, session, text, truncated = false, reason } = value;
   if (typeof pane !== 'string' || !PANE.test(pane) || agent !== LEFT_OFF_AGENT) return null;
-  if (typeof event !== 'string' || !Object.hasOwn(EVENT_FIELDS, event)) return null;
   if (typeof session !== 'string' || !SESSION_ID.test(session)) return null;
+  if (event === END_EVENT) {
+    // The end carries its reason only: no text, no truncated mark.
+    if (text !== undefined || value.truncated !== undefined || typeof reason !== 'string' || !END_REASON.test(reason)) return null;
+    return { pane, session, field: 'end', reason };
+  }
+  if (typeof event !== 'string' || !Object.hasOwn(EVENT_FIELDS, event) || reason !== undefined) return null;
   if (typeof text !== 'string' || !text.trim() || typeof truncated !== 'boolean') return null;
   const bounded = boundText(text);
   return { pane, field: EVENT_FIELDS[event as keyof typeof EVENT_FIELDS], session, text: bounded.text, truncated: truncated || bounded.truncated };
@@ -256,20 +302,34 @@ export class LeftOffStore {
     const file = recordFile(this.dir, workspaceId, rel);
     const at = new Date(this.now()).toISOString();
     const previous = await readLeftOff(this.dir, workspaceId, rel, { days: this.days, now: this.now() });
-    // One current record per folder: a new session replaces the last one's texts.
-    const record: LeftOffRecord =
-      previous && previous.sessionId === line.session
-        ? { ...previous, at }
+    const same = previous && previous.sessionId === line.session ? previous : null;
+    let record: LeftOffRecord;
+    if (line.field === 'end') {
+      // Only the session's own record: another session's end never touches the current texts.
+      if (!same) return;
+      record = { ...same, at, endedAt: at, endReason: line.reason };
+    } else {
+      // One current record per folder: a new session replaces the last one's texts; a later text of
+      // the same session means it goes on, so its end is cleared.
+      record = same
+        ? { ...same, at }
         : { v: 1, agent: LEFT_OFF_AGENT, workspaceId, rel, sessionId: line.session, at, lastUserMessage: null, lastMessage: null, compactSummary: null };
-    record[line.field] = { text: line.text, at, ...(line.truncated ? { truncated: true as const } : {}) };
+      delete record.endedAt;
+      delete record.endReason;
+      record[line.field] = { text: line.text, at, ...(line.truncated ? { truncated: true as const } : {}) };
+    }
     await writePrivateFile(dirname(file), basename(file), JSON.stringify(record, null, 2) + '\n');
   }
 }
 
-/** Which text of `record` the view parses: the final message, else the compaction summary, else none. */
+/**
+ * Which text of `record` the view parses: the newer of the final message and the compaction summary
+ * (by their own `at`; the same instant keeps the final message), else the one there is, else none.
+ */
 export function leftOffSource(record: LeftOffRecord): { from: Field; text: LeftOffText | null } {
-  if (record.lastMessage) return { from: 'lastMessage', text: record.lastMessage };
-  if (record.compactSummary) return { from: 'compactSummary', text: record.compactSummary };
+  const { lastMessage, compactSummary } = record;
+  if (lastMessage && (!compactSummary || Date.parse(compactSummary.at) <= Date.parse(lastMessage.at))) return { from: 'lastMessage', text: lastMessage };
+  if (compactSummary) return { from: 'compactSummary', text: compactSummary };
   return { from: 'lastUserMessage', text: null };
 }
 
