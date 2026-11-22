@@ -28,6 +28,7 @@ node-pty compiles native code during install, so you also need python3, make and
 A test that runs `scripts/bootstrap.sh` or `install.sh` calls `assertInstallerSandbox` (`test/helpers/installer-sandbox.ts`)
 on the child's environment right before starting it; it throws unless the run is in a container or under a temporary
 `HOME`. Run those scripts by hand the same way, in a container or with a temporary `HOME`, never with your own.
+The guard also throws when the child's `PATH` finds a real `mise`, `curl` or `wget`, so no installer test reaches the network: put the fakes `writeNetworkBarrier` writes (exit 97) right after the test's own stubs.
 
 ### Typecheck
 

@@ -4,12 +4,13 @@
 // A scan then checks that every file under test/ and scripts/ that runs an installer calls it.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
-import { realpathSync } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { chmod, mkdir, mkdtemp, readdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { existsSync, realpathSync } from 'node:fs';
 import { tmpdir, userInfo } from 'node:os';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { assertInstallerSandbox, defaultProbe, type InstallerSandboxProbe } from './helpers/installer-sandbox.ts';
+import { assertInstallerSandbox, defaultProbe, NETWORK_BARRIER_EXIT, writeNetworkBarrier, type InstallerSandboxProbe } from './helpers/installer-sandbox.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
@@ -103,6 +104,110 @@ test('on this host the default probe refuses HOME set to the real home', { skip:
   const box = await realpath(await mkdtemp(join(tmpdir(), 'mirador-sandbox-home-')));
   try {
     assert.doesNotThrow(() => assertInstallerSandbox({ HOME: box }));
+  } finally {
+    await rm(box, { recursive: true, force: true });
+  }
+});
+
+// The network barrier: installer tests must not reach the network (a real mise under a scratch HOME once
+// downloaded Node). writeNetworkBarrier writes a fake mise, curl and wget that only say so and exit 97, and
+// the guard refuses a PATH that finds any of the three outside the temp dir.
+
+const blocked = (tool: string) => `mirador test sandbox: '${tool}' is blocked here, installer tests must not reach the network\n`;
+
+function runIn(file: string, args: string[], env: NodeJS.ProcessEnv, cwd: string): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    execFile(file, args, { env, cwd }, (error, stdout, stderr) => resolve({ code: error ? (typeof error.code === 'number' ? error.code : null) : 0, stdout, stderr }));
+  });
+}
+
+const reaches = (tool: string, found: string, tmp = fakeTmp) => ({
+  name: 'Error',
+  message: `installer sandbox: PATH finds ${tool} at ${found}, outside ${tmp}; put writeNetworkBarrier's folder on PATH before any system folder, so installer tests cannot reach the network`,
+});
+
+/** A folder outside the fake temp dir holding executables named `names`, standing in for /usr/bin. */
+async function systemBin(name: string, names: string[]): Promise<string> {
+  const dir = join(scratch, name);
+  await mkdir(dir, { recursive: true });
+  for (const tool of names) {
+    await writeFile(join(dir, tool), '#!/bin/sh\nexit 0\n');
+    await chmod(join(dir, tool), 0o755);
+  }
+  return dir;
+}
+
+test('each fake in the network barrier says it is blocked on stderr, exits 97, prints nothing on stdout and leaves no file', async () => {
+  const barrier = await writeNetworkBarrier(join(fakeTmp, 'barrier-a'));
+  const cwd = join(fakeTmp, 'barrier-cwd');
+  const home = join(fakeTmp, 'barrier-home');
+  await mkdir(cwd, { recursive: true });
+  await mkdir(home, { recursive: true });
+  assert.equal(NETWORK_BARRIER_EXIT, 97);
+  assert.deepEqual((await readdir(barrier)).sort(), ['curl', 'mise', 'wget']);
+  for (const tool of ['mise', 'curl', 'wget']) {
+    const result = await runIn(join(barrier, tool), ['https://example.invalid/install.sh', '-o', 'out'], { PATH: barrier, HOME: home }, cwd);
+    assert.deepEqual(result, { code: 97, stdout: '', stderr: blocked(tool) }, tool);
+  }
+  assert.deepEqual(await readdir(cwd), [], 'a fake wrote in its folder');
+  assert.deepEqual(await readdir(home), [], 'a fake wrote in HOME');
+  assert.deepEqual((await readdir(barrier)).sort(), ['curl', 'mise', 'wget'], 'a fake wrote in the barrier');
+});
+
+test('the network barrier can hold only some of the fakes', async () => {
+  const barrier = await writeNetworkBarrier(join(fakeTmp, 'barrier-b'), ['curl', 'wget']);
+  assert.deepEqual((await readdir(barrier)).sort(), ['curl', 'wget']);
+});
+
+test('a PATH that finds a real mise, curl or wget outside the temp dir is refused, naming the tool and where it was found', async () => {
+  const home = join(fakeTmp, 'box', 'home');
+  for (const tool of ['mise', 'curl', 'wget']) {
+    const bin = await systemBin(`sys-${tool}`, [tool]);
+    assert.throws(() => assertInstallerSandbox({ HOME: home, PATH: bin }, probe), reaches(tool, join(bin, tool)));
+    assert.throws(() => assertInstallerSandbox({ HOME: home, PATH: `${join(scratch, 'nowhere')}::relative:${bin}` }, probe), reaches(tool, join(bin, tool)));
+  }
+  // A link inside the temp dir that points at a real one is judged by where it really is.
+  const sys = await systemBin('sys-linked', ['curl']);
+  const mirror = join(fakeTmp, 'mirror');
+  await mkdir(mirror, { recursive: true });
+  await symlink(join(sys, 'curl'), join(mirror, 'curl'));
+  assert.throws(() => assertInstallerSandbox({ HOME: home, PATH: mirror }, probe), reaches('curl', `${join(mirror, 'curl')} (${join(sys, 'curl')})`));
+  // It applies in a container too: the barrier is about the network, not the home.
+  assert.throws(() => assertInstallerSandbox({ PATH: sys }, { ...probe, inContainer: () => true }), reaches('curl', join(sys, 'curl')));
+});
+
+test('with the network barrier before the system folders, or none of the three on PATH, the PATH is allowed', async () => {
+  const home = join(fakeTmp, 'box', 'home');
+  const sys = await systemBin('sys-all', ['mise', 'curl', 'wget', 'git']);
+  const barrier = await writeNetworkBarrier(join(fakeTmp, 'barrier-c'));
+  const gitOnly = await systemBin('sys-git', ['git']);
+  assert.doesNotThrow(() => assertInstallerSandbox({ HOME: home, PATH: `${barrier}:${sys}` }, probe));
+  assert.doesNotThrow(() => assertInstallerSandbox({ HOME: home, PATH: gitOnly }, probe));
+  assert.doesNotThrow(() => assertInstallerSandbox({ HOME: home }, probe));
+  // A barrier holding only curl and wget still refuses a mise found after it.
+  const partial = await writeNetworkBarrier(join(fakeTmp, 'barrier-d'), ['curl', 'wget']);
+  assert.throws(() => assertInstallerSandbox({ HOME: home, PATH: `${partial}:${sys}` }, probe), reaches('mise', join(sys, 'mise')));
+});
+
+test("a test's own curl stub before the barrier is kept: it runs, and the guard allows it", async () => {
+  const home = join(fakeTmp, 'box', 'home');
+  const stubs = join(fakeTmp, 'stubs-c');
+  await mkdir(stubs, { recursive: true });
+  await writeFile(join(stubs, 'curl'), "#!/bin/sh\necho 'curl stub ran'\n");
+  await chmod(join(stubs, 'curl'), 0o755);
+  const barrier = await writeNetworkBarrier(join(fakeTmp, 'barrier-e'));
+  const env = { HOME: home, PATH: `${stubs}:${barrier}:${await systemBin('sys-stubbed', ['curl'])}` };
+  assert.doesNotThrow(() => assertInstallerSandbox(env, probe));
+  assert.deepEqual(await runIn('/bin/sh', ['-c', 'curl https://example.invalid; mise --version'], env, home), { code: 97, stdout: 'curl stub ran\n', stderr: blocked('mise') });
+});
+
+test('on this host the default probe refuses a PATH that finds the system mise, curl or wget, and allows it behind the barrier', { skip: !['mise', 'curl', 'wget'].some((tool) => existsSync(`/usr/bin/${tool}`)) && 'no mise, curl or wget in /usr/bin' }, async () => {
+  const box = await realpath(await mkdtemp(join(tmpdir(), 'mirador-sandbox-barrier-')));
+  try {
+    const home = join(box, 'home');
+    assert.throws(() => assertInstallerSandbox({ HOME: home, PATH: '/usr/bin' }), /^Error: installer sandbox: PATH finds (?:mise|curl|wget) at \/usr\/bin\/(?:mise|curl|wget)/);
+    const barrier = await writeNetworkBarrier(join(box, 'barrier'));
+    assert.doesNotThrow(() => assertInstallerSandbox({ HOME: home, PATH: `${barrier}:/usr/bin` }));
   } finally {
     await rm(box, { recursive: true, force: true });
   }

@@ -76,6 +76,8 @@ On Linux, one line clones Mirador into `~/.local/share/mirador` (`$XDG_DATA_HOME
 curl -fsSL https://raw.githubusercontent.com/mata-2p/mirador/main/scripts/bootstrap.sh | sh
 ```
 
+**Prebuilt release (Linux, coming).** The script can also install a prebuilt release, which bundles Node and a built `node-pty`, so it needs no git, Node, pnpm or compiler; it does so only once a release is pinned in it, and none is yet, so today the line installs from source as described here. With a release pinned, on Linux x64 and arm64 with glibc 2.28 or newer, it downloads `mirador-<version>-linux-<arch>.tar.gz` from GitHub Releases, checks it against the sha256 written in the script before unpacking it into `~/.local/share/mirador/<version>`, points `~/.local/share/mirador/current` at it, runs its doctor and adds the launcher; it takes no installer options. When `~/.local/share/mirador` is already a git clone, it leaves it as it is, stops and says how to keep the clone or move it away. It never checks for updates: running the line again is how you update. macOS and other systems keep the install from source. [docs/releasing.md](docs/releasing.md) says how a release is built and pinned.
+
 Installer options go after `sh -s --`, as in `curl -fsSL … | sh -s -- --root ~/code`. Run it as your own user: as root, or with `sudo`, it refuses and changes nothing, because Mirador installs into your home folder. You stay in your folder, so the installer names the clone's files in full: it ends with `start Mirador with: /home/you/.local/share/mirador/bin/mirador`, and when something is missing it says to run `/home/you/.local/share/mirador/install.sh` again (running the same line again works too). When git cannot clone, it says `bootstrap.sh: could not download Mirador from …` and exits 1.
 
 Keep the `-f` of `-fsSL`: with it, a failed download (a 404, no network) makes curl print the error, for example `curl: (22) The requested URL returned error: 404`, and pass nothing to `sh`, instead of an error page that `sh` would try to run. `sh` then runs nothing, but with a pipe the line still exits 0, so look for that curl line. A download cut short runs nothing either: the script prints `bootstrap.sh: this copy of the script is incomplete (the download was cut short), so nothing ran; download it again` and exits 1. To make any failed download stop with a non-zero exit, save the script, read it, then run it:
@@ -244,7 +246,7 @@ Terminals run in systemd scopes where `systemd-run --user --scope` works. `MIRAD
 pnpm test                 # node --test 'test/**/*.test.ts'
 ```
 
-New features plug in as one route module and one UI module each; [docs/extending.md](docs/extending.md) lists the shared helpers, events, DOM slots and the lines each feature registers on.
+New features plug in as one route module and one UI module each; [docs/extending.md](docs/extending.md) lists the shared helpers, events, DOM slots and the lines each feature registers on. [docs/releasing.md](docs/releasing.md) is for maintainers: cutting a release, reviewing its draft and the promotion PR that pins it in `scripts/bootstrap.sh`.
 
 ## Author
 

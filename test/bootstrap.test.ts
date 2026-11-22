@@ -3,7 +3,10 @@
 // caller's folder, so the paths install.sh prints are full ones.
 // Every run gets a scratch HOME and a local bare repository as origin (MIRADOR_REPO_URL) whose
 // install.sh is a stub that records where it ran and with which arguments; nothing touches the
-// network, the real home or the real install.sh.
+// network, the real home or the real install.sh. The network barrier's fake mise, curl and wget come
+// right after the stubs on PATH, before the system's.
+// These tests cover the install from source, so they run a copy of the script with no release pinned,
+// whatever main pins; test/bootstrap-prebuilt.test.ts covers the prebuilt release.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
@@ -12,11 +15,15 @@ import { access, chmod, mkdir, mkdtemp, readdir, readFile, realpath, rm, symlink
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { assertInstallerSandbox } from './helpers/installer-sandbox.ts';
+import { assertInstallerSandbox, writeNetworkBarrier } from './helpers/installer-sandbox.ts';
+import { withPins } from './helpers/bootstrap-pins.ts';
 
-const SCRIPT = fileURLToPath(new URL('../scripts/bootstrap.sh', import.meta.url));
+const SOURCE = fileURLToPath(new URL('../scripts/bootstrap.sh', import.meta.url));
 
 let scratch: string;
+/** The fake mise, curl and wget that fail instead of reaching the network (writeNetworkBarrier). */
+let barrier: string;
+let SCRIPT: string;
 let boxes = 0;
 
 const GIT_ENV = { GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.invalid', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.invalid' };
@@ -37,7 +44,7 @@ interface Box {
   env: NodeJS.ProcessEnv;
 }
 
-/** A bare origin holding a stub install.sh, a scratch HOME and a PATH of the system plus `stubs`. */
+/** A bare origin holding a stub install.sh, a scratch HOME and a PATH of `stubs`, the network barrier and the system. */
 async function box(): Promise<Box> {
   const dir = join(scratch, `box-${++boxes}`);
   const home = join(dir, 'home');
@@ -56,7 +63,7 @@ async function box(): Promise<Box> {
   await git(work, ['commit', '-qm', 'one'], home);
   await git(dir, ['clone', '-q', '--bare', work, origin], home);
   await git(work, ['remote', 'add', 'origin', origin], home);
-  const env: NodeJS.ProcessEnv = { PATH: `${stubs}:${process.env.PATH}`, HOME: home, MIRADOR_REPO_URL: origin, ...GIT_ENV };
+  const env: NodeJS.ProcessEnv = { PATH: `${stubs}:${barrier}:${process.env.PATH}`, HOME: home, MIRADOR_REPO_URL: origin, ...GIT_ENV };
   return { dir, home, origin, work, installLog, stubs, env };
 }
 
@@ -95,6 +102,28 @@ const installCalls = async (b: Box) => (await readFile(b.installLog, 'utf8').cat
 
 before(async () => {
   scratch = await realpath(await mkdtemp(join(tmpdir(), 'mirador-bootstrap-')));
+  barrier = await writeNetworkBarrier(join(scratch, 'barrier'));
+  SCRIPT = join(scratch, 'bootstrap.sh');
+  await writeFile(SCRIPT, withPins(await readFile(SOURCE, 'utf8')));
+});
+
+/** Runs `script` with sh in the box's folder and env; not an installer run. */
+function sh(b: Box, script: string): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    execFile('/bin/sh', ['-c', script], { cwd: b.dir, env: b.env }, (error, stdout, stderr) => resolve({ code: error ? (typeof error.code === 'number' ? error.code : null) : 0, stdout, stderr }));
+  });
+}
+
+const BLOCKED_MISE = "mirador test sandbox: 'mise' is blocked here, installer tests must not reach the network\n";
+
+test("the box's PATH finds mise, curl and wget in the network barrier, and a curl stub of the test's own wins over it", async () => {
+  const b = await box();
+  const found = await sh(b, 'for tool in mise curl wget; do command -v "$tool" || echo "no $tool"; done');
+  assert.equal(found.stdout, `${join(barrier, 'mise')}\n${join(barrier, 'curl')}\n${join(barrier, 'wget')}\n`);
+  await writeFile(join(b.stubs, 'curl'), "#!/bin/sh\necho 'curl stub ran'\n");
+  await chmod(join(b.stubs, 'curl'), 0o755);
+  assert.deepEqual(await sh(b, 'command -v curl; curl https://example.invalid; mise use -g node@24'), { code: 97, stdout: `${join(b.stubs, 'curl')}\ncurl stub ran\n`, stderr: BLOCKED_MISE });
+  assert.deepEqual(await readdir(b.home), []);
 });
 
 after(async () => {
@@ -179,7 +208,7 @@ test('without git it says how to install it and changes nothing', async () => {
   for (const tool of ['id', 'mkdir', 'dirname', 'uname']) await symlink(existsSync(`/usr/bin/${tool}`) ? `/usr/bin/${tool}` : `/bin/${tool}`, join(bin, tool));
   await writeFile(join(bin, 'apt-get'), `#!/bin/sh\necho ran >> '${join(b.dir, 'forbidden.log')}'\nexit 1\n`);
   await chmod(join(bin, 'apt-get'), 0o755);
-  b.env.PATH = bin;
+  b.env.PATH = `${bin}:${barrier}`;
   const result = await run(b);
   assert.equal(result.code, 1);
   assert.equal(result.stdout, '');
