@@ -60,6 +60,9 @@ async function snapshot(): Promise<Record<string, string>> {
   const found: Record<string, string> = {};
   const walk = async (dir: string, prefix: string) => {
     for (const entry of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
+      // The store writes `.<name>.<pid>.tmp` and then renames it: a temp file is no record yet, and
+      // reading one would let a test ask the server before the record is there.
+      if (entry.name.startsWith('.')) continue;
       const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
       if (entry.isDirectory()) await walk(join(dir, entry.name), rel);
       else found[rel] = await readFile(join(dir, entry.name), 'utf8');
@@ -319,7 +322,12 @@ test('rejected lines leave the store unchanged; an over-long text from the socke
   for (const [name, text] of Object.entries(before)) assert.equal(after[name], text, `${name} is unchanged`);
 });
 
-test('a newer Engram summary wins over the record, an older one loses, and the source says which', async () => {
+test('a newer Engram summary wins over the record, an older one loses, and the source says which', async (t) => {
+  // A failure here must not leave Engram up for the tests after it.
+  t.after(() => {
+    engram.down = true;
+    engram.observations = [];
+  });
   engram.down = false;
   engram.observations = [{ id: 1, type: 'session_summary', title: 'Session summary', project: 'alpha', created_at: '2000-01-01 10:00:00', content: '## Goal\nAn old goal\n## Next Steps\n- old step' }];
   const older = (await folderView('alpha')).body;
