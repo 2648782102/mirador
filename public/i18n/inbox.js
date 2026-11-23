@@ -93,6 +93,16 @@ export default {
     'inbox.night.rule.error': 'the decider failed',
     'inbox.night.rule.invalid': 'its answer did not fit',
     'inbox.night.rule.other': 'it needs your review',
+    // The phone layout (public/features/phone.js).
+    'inbox.phone.title': 'Waiting for you ({count})',
+    'inbox.phone.live': 'Live',
+    'inbox.phone.reconnecting': 'Reconnecting…',
+    'inbox.phone.toDeck': 'Terminals',
+    'inbox.phone.toDeckLabel': 'Back to the terminals',
+    'inbox.phone.full': 'Open the full interface',
+    'inbox.phone.fullHint': 'Workspaces, files, autopilot and settings.',
+    'inbox.phone.toInbox': 'Waiting for you',
+    'inbox.phone.toInboxLabel': 'Back to the agents waiting for you',
   },
   es: {
     'inbox.label': 'Terminales que te esperan',
@@ -146,5 +156,15 @@ export default {
     'inbox.night.rule.error': 'falló el decisor',
     'inbox.night.rule.invalid': 'su respuesta no calzaba',
     'inbox.night.rule.other': 'necesita tu revisión',
+    // El diseño de teléfono (public/features/phone.js).
+    'inbox.phone.title': 'Te esperan ({count})',
+    'inbox.phone.live': 'En vivo',
+    'inbox.phone.reconnecting': 'Reconectando…',
+    'inbox.phone.toDeck': 'Terminales',
+    'inbox.phone.toDeckLabel': 'Volver a las terminales',
+    'inbox.phone.full': 'Abrir la interfaz completa',
+    'inbox.phone.fullHint': 'Workspaces, archivos, piloto automático y ajustes.',
+    'inbox.phone.toInbox': 'Te esperan',
+    'inbox.phone.toInboxLabel': 'Volver a los agentes que te esperan',
   },
 };

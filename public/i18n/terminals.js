@@ -34,6 +34,15 @@ export default {
     'termGroup.collapse': 'Collapse {name}',
     'termGroup.expand': 'Expand {name} and show its latest terminal',
     'termGroup.reorderHint': 'Drag a header to reorder',
+    // The phone layout's key bar (public/features/phone.js, phone-model.js KEY_BAR).
+    'term.keys.label': 'Keys for the terminal',
+    'term.keys.escape': 'Escape',
+    'term.keys.tab': 'Tab',
+    'term.keys.left': 'Left arrow',
+    'term.keys.up': 'Up arrow',
+    'term.keys.down': 'Down arrow',
+    'term.keys.right': 'Right arrow',
+    'term.keys.enter': 'Enter',
   },
   es: {
     'layout.group': 'Disposición de terminales',
@@ -68,5 +77,14 @@ export default {
     'termGroup.collapse': 'Contraer {name}',
     'termGroup.expand': 'Expandir {name} y mostrar su terminal más reciente',
     'termGroup.reorderHint': 'Arrastra una cabecera para reordenar',
+    // La barra de teclas del diseño de teléfono (public/features/phone.js, phone-model.js KEY_BAR).
+    'term.keys.label': 'Teclas para la terminal',
+    'term.keys.escape': 'Escape',
+    'term.keys.tab': 'Tabulador',
+    'term.keys.left': 'Flecha izquierda',
+    'term.keys.up': 'Flecha arriba',
+    'term.keys.down': 'Flecha abajo',
+    'term.keys.right': 'Flecha derecha',
+    'term.keys.enter': 'Intro',
   },
 };

@@ -38,6 +38,11 @@ function setOpen(next, { focus = false } = {}) {
   if (target) $(target).focus();
 }
 
+/** Closes the open drawer, if any, without moving the focus: the phone layout (features/phone.js) covers the page. */
+export function closeDrawer() {
+  if (open) setOpen(null);
+}
+
 /** The tab stops of the open drawer, in document order. */
 function tabStops(drawer) {
   return [...drawer.querySelectorAll(FOCUSABLE)].filter((node) => node.tabIndex >= 0 && !node.disabled && node.getClientRects().length > 0);

@@ -46,6 +46,9 @@ import * as help from '/features/help.js';
 // Credits
 import * as credits from '/features/credits.js';
 
+// Phone layout
+import * as phone from '/features/phone.js';
+
 
 /** Started in this order after sign-in, once config and workspaces are loaded. */
 const FEATURES = [
@@ -89,6 +92,9 @@ const FEATURES = [
 
   // Credits: the topbar brand opens who made Mirador, with the intro the first time.
   credits,
+
+  // Phone layout: under 600px wide the page opens on the inbox, full-screen; after the drawers it folds.
+  phone,
 
 ];
 
