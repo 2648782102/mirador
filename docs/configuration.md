@@ -8,8 +8,10 @@ The `mirador` commands, every key of `~/.config/mirador/config.json` and how Mir
 pnpm install              # builds node-pty for the current Node
 bin/mirador install       # optional: adds ~/.local/bin/mirador and, on Linux, an app menu entry
 mirador                   # starts the server if needed and opens an app window (a tab without a Chromium-family browser)
-mirador status | stop | logs
+mirador link | status | stop | logs
 ```
+
+`mirador link` prints only a fresh one-time link to the running server, on one line, and opens no window, for a phone or another machine through the SSH tunnel in [docs/security.md](security.md#opening-mirador-from-another-machine); without a running server it says so and exits 1.
 
 `mirador stop` stops the server and every terminal it runs, and returns once the server process is gone and its port is free, so `mirador stop && mirador` starts the new one right away. It waits up to 30 s; after that it says the server is still stopping and exits 1. The agents among them reopen at the next start.
 

@@ -799,3 +799,55 @@ test('on Linux without a display open starts the server, opens no browser and pr
   assert.match((await waitFor(async () => ((await lines(log)).length ? lines(log) : undefined)))[0], new RegExp(`^chromium --app=${launch(box.port)} --class=mirador$`));
   await stopServer(box, pid);
 });
+
+// `mirador link` (phone inbox, #41 S7): a fresh one-time link to the running server on stdout, without
+// trying any window, so getting it onto a phone is one step.
+test('link prints exactly one fresh one-time link to the running server and opens no window, even with a display', { skip: EMULATES_LINUX_SERVER }, async () => {
+  const { box, dir, pid, base } = await linuxBox('link');
+  const log = join(dir, 'opened.log');
+  box.env.PATH = `${await recorders(join(dir, 'openers'), [...BROWSERS, 'xdg-open', 'wslview', 'open', 'powershell.exe'], log)}:${base}`;
+  box.env.WAYLAND_DISPLAY = 'wayland-0';
+  const first = await run(box, 'link');
+  const second = await run(box, 'link');
+  for (const result of [first, second]) {
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(result.stderr, '');
+    assert.match(result.stdout, new RegExp(`^${launch(box.port)}\\n$`));
+  }
+  assert.notEqual(first.stdout, second.stdout, 'each link is fresh');
+  assert.equal(await statePid(box), pid, 'the running server answered it');
+
+  // The printed link signs one browser in, once.
+  const origin = `http://127.0.0.1:${box.port}`;
+  const nonce = new URL(first.stdout.trim()).hash.replace('#launch=', '');
+  const redeem = () => fetch(`${origin}/api/session`, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ nonce }) });
+  assert.equal((await redeem()).status, 200);
+  assert.equal((await redeem()).status, 403);
+
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.deepEqual(await lines(log), [], 'a browser or opener was started');
+  await stopServer(box, pid);
+});
+
+test('link without a running server says so on stderr, exits 1 and starts nothing', async () => {
+  const idle = await sandbox('link-not-running');
+  const dir = join(scratch, 'link-not-running');
+  const log = join(dir, 'opened.log');
+  idle.env.PATH = `${await recorders(join(dir, 'openers'), [...BROWSERS, 'xdg-open', 'wslview', 'open'], log)}:${idle.env.PATH}`;
+  const result = await run(idle, 'link');
+  assert.deepEqual([result.code, result.stdout, result.stderr], [1, '', 'mirador: not running; start it with mirador first, then run mirador link\n']);
+  assert.equal(existsSync(idle.statePath), false, 'no server was started');
+  assert.equal(existsSync(idle.serverLog), false, 'no server log was opened');
+  assert.deepEqual(await lines(idle.systemdRunLog), []);
+  assert.deepEqual(await lines(log), []);
+
+  // A stale state file (a dead pid) is no server either.
+  await staleState(idle);
+  const stale = await run(idle, 'link');
+  assert.deepEqual([stale.code, stale.stdout, stale.stderr], [1, '', 'mirador: not running; start it with mirador first, then run mirador link\n']);
+});
+
+test('the usage line names link among the subcommands', async () => {
+  const result = await run(await sandbox('usage'), 'nope');
+  assert.deepEqual([result.code, result.stdout, result.stderr], [2, '', 'usage: mirador [open|link|stop|status|logs|install|uninstall]\n']);
+});
