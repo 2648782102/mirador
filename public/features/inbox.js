@@ -9,13 +9,17 @@
 // since EventSource cannot send the session token); see src/http/routes/inbox.ts.
 // Night shift: a card shows what Mirador is doing or did for it (deciding, moved on,
 // left for you), and a card Mirador resolved stays as a short note until it is seen.
+// Phone layout (public/features/phone.js, on its `phone` event): cards read the reason first, a
+// card opens its terminal without the soft keyboard, and the stream's state goes to the header
+// (the `inbox:stream` event).
 import { api, el, emit, getLanguage, on, prefs, session, slot, t, workspaceById } from '/core.js';
 import { BRAND } from '/mode-model.js';
 import { nightView } from '/i18n/inbox.js';
 import { icon } from '/icons.js';
-import { answers, inboxGroups, waitLabel } from '/features/inbox-model.js';
+import { answers, cardLayout, inboxGroups, waitLabel } from '/features/inbox-model.js';
 import { createInboxNotifier, NOTIFY_PREF, showNotification as showCardNotification } from '/features/inbox-notify.js';
 import { activateTerminal, activeTerminalId, markWaiting, terminalList } from '/terminals.js';
+import { showsActiveTerminal } from '/features/phone-model.js';
 
 /** gentle-shell's blocker labels, translated; any other label is shown as the agent wrote it. */
 // Tracking: exported so the tracking view words blockers the same way.
@@ -45,6 +49,10 @@ let items = [];
 let notes = [];
 /** terminalId → the night state last announced (state, summary, rule), so only changes are read out. */
 let announced = null;
+/** The phone view (phone-model.js nextView), null on the desktop layout. */
+let phoneView = null;
+/** The stream's state: 'live' while it reads, 'reconnecting' before the first answer and between tries. */
+let stream = 'reconnecting';
 const baseTitle = document.title.replace(/^\(\d+\)\s*/, '') || BRAND;
 
 /** A night note with no card behind it has no label: a question, or a note to an agent that had not finished. */
@@ -53,8 +61,8 @@ const reason = (item) =>
     ? t(item.label ? 'inbox.reason.finished' : 'inbox.reason.note')
     : REASONS[item.label] ? t(REASONS[item.label]) : item.label || t('inbox.reason.question');
 const isNote = (item) => notes.includes(item);
-/** He is looking at it: the active terminal of a window on screen. */
-const inView = (item) => item.terminalId === activeTerminalId() && document.visibilityState === 'visible';
+/** He is looking at it: the active terminal of a window on screen, unless the phone's inbox covers it. */
+const inView = (item) => showsActiveTerminal(phoneView) && item.terminalId === activeTerminalId() && document.visibilityState === 'visible';
 
 /** "folder › subfolder" of the terminal, or the workspace root. */
 const place = (item) => (item.rel ? item.rel.split('/').join(' › ') : t('inbox.root'));
@@ -91,28 +99,43 @@ function renderNight(night) {
   );
 }
 
-/** One card; `named` adds its workspace to the place (the "needs you" list is not grouped by workspace). */
+/**
+ * A card's click: its terminal, which takes the keyboard on the desktop; on the phone it opens
+ * full-screen (features/phone.js) without raising the soft keyboard.
+ */
+function openCard(id) {
+  activateTerminal(id, !phoneView);
+  emit('inbox:open', id);
+}
+
+/**
+ * One card; `named` adds its workspace to the place (the "needs you" list is not grouped by
+ * workspace). Its parts follow cardLayout: the phone layout reads the reason first.
+ */
 function renderItem(item, note, here, named = false) {
   const time = new Date(item.since).toLocaleTimeString(getLanguage(), { hour: '2-digit', minute: '2-digit' });
-  const content = [
-    el('span', { class: 'inbox-place' }, named ? `${workspaceName(item)} › ${place(item)}` : place(item)),
-    el('span', { class: 'inbox-reason' }, reason(item)),
-    item.detail ? el('span', { class: 'inbox-detail', title: item.detail }, item.detail) : null,
-    renderNight(item.night),
-    el(
-      'span',
-      { class: 'inbox-meta' },
-      el('span', { class: 'inbox-wait', 'data-since': item.since, title: t('inbox.since', { time }) }, waited(item.since)),
-      item.activity ? el('span', { class: 'inbox-activity', title: item.activity }, item.activity) : null,
-      here ? null : el('span', {}, t('inbox.elsewhere')),
-    ),
-  ];
+  const layout = cardLayout(Boolean(phoneView), named);
+  const parts = {
+    place: () => el('span', { class: 'inbox-place' }, layout.named ? `${workspaceName(item)} › ${place(item)}` : place(item)),
+    reason: () => el('span', { class: 'inbox-reason' }, reason(item)),
+    detail: () => (item.detail ? el('span', { class: 'inbox-detail', title: item.detail }, item.detail) : null),
+    night: () => renderNight(item.night),
+    meta: () =>
+      el(
+        'span',
+        { class: 'inbox-meta' },
+        el('span', { class: 'inbox-wait', 'data-since': item.since, title: t('inbox.since', { time }) }, waited(item.since)),
+        item.activity ? el('span', { class: 'inbox-activity', title: item.activity }, item.activity) : null,
+        here ? null : el('span', {}, t('inbox.elsewhere')),
+      ),
+  };
+  const content = layout.parts.map((part) => parts[part]());
   const file = answers(item) && !note ? namedFile(item.label) ?? (item.detail && namedFile(item.detail)) : null;
   return el(
     'li',
     { class: note ? 'inbox-item night-note' : 'inbox-item' },
     here
-      ? el('button', { type: 'button', class: 'inbox-jump', 'data-terminal': item.terminalId, title: t('inbox.jump'), onclick: () => activateTerminal(item.terminalId) }, ...content)
+      ? el('button', { type: 'button', class: 'inbox-jump', 'data-terminal': item.terminalId, title: t('inbox.jump'), onclick: () => openCard(item.terminalId) }, ...content)
       : el('div', { class: 'inbox-jump elsewhere' }, ...content),
     file
       ? el('button', { type: 'button', class: 'btn inbox-file', onclick: () => emit('files:open', { ws: item.workspaceId, rel: item.rel, path: file }) }, t('inbox.openFile', { file }))
@@ -244,6 +267,15 @@ function tick() {
   host.querySelectorAll('.inbox-wait[data-since]').forEach((node) => { node.textContent = waited(node.dataset.since); });
 }
 
+/** The stream's state, for the phone header (features/phone.js reads it at start, then follows the event). */
+export const inboxStream = () => stream;
+
+function setStream(next) {
+  if (next === stream) return;
+  stream = next;
+  emit('inbox:stream', stream);
+}
+
 /** Reads the stream for as long as the window lives; reconnects with backoff, stops on 401. */
 async function follow() {
   let delay = 1000;
@@ -254,6 +286,7 @@ async function follow() {
       if (response.status === 401) return session.expire();
       if (!response.ok || !response.body) throw new Error(`inbox stream answered ${response.status}`);
       delay = 1000;
+      setStream('live');
       const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
       let buffer = '';
       for (;;) {
@@ -286,6 +319,7 @@ async function follow() {
     } catch {
       // The server restarted or the network dropped: try again below.
     }
+    setStream('reconnecting');
     await new Promise((resolve) => setTimeout(resolve, delay));
     delay = Math.min(delay * 2, 30_000);
   }
@@ -311,6 +345,10 @@ export async function init() {
   on('workspaces', render);
   on('language', render);
   on('activate', seen);
+  on('phone', (view) => {
+    phoneView = view;
+    render();
+  });
   document.addEventListener('visibilitychange', render);
   setInterval(tick, TICK_MS);
   render();

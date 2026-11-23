@@ -36,6 +36,24 @@ export const SETTINGS_ROWS = [
   { id: 'help', key: 'settings.help', icon: 'help', control: 'button', buttonKey: 'help.open', shortcut: 'Shift+?' },
 ];
 
+/**
+ * "Cerrar sesión en las demás ventanas", under the rows (DELETE /api/session/others): it clears every
+ * session but this window's, for a lost or forgotten phone (docs/security.md). It asks first with
+ * `confirm`, whose keys are confirmDialog()'s fields.
+ */
+export const SIGN_OUT_OTHERS = {
+  key: 'settings.signOut',
+  hintKey: 'settings.signOutHint',
+  buttonKey: 'settings.signOut.button',
+  confirm: { title: 'settings.signOut.title', message: 'settings.signOut.message', confirmLabel: 'settings.signOut.confirm', cancelLabel: 'common.cancel' },
+};
+
+/** The line after a sign-out that cleared `cleared` other sessions: its i18n key and vars. */
+export function signOutResult(cleared) {
+  if (!cleared) return { key: 'settings.signOut.none', vars: {} };
+  return { key: cleared === 1 ? 'settings.signOut.one' : 'settings.signOut.other', vars: { count: cleared } };
+}
+
 /** [value, pressed] per choice: only the one equal to `current`. */
 export function pressedChoices(choices, current) {
   return choices.map((choice) => [choice.value, choice.value === current]);

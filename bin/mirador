@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Mirador launcher: starts the local server when it is not running and opens
 # it in a Chromium app window (Linux, macOS, WSL2), else in a tab of the default browser; on Linux without
-# a display it prints the link to open by hand. Subcommands: (none) open, stop, status, logs,
+# a display it prints the link to open by hand. Subcommands: (none) open, link (prints a fresh
+# one-time link to the running server and opens no window), stop, status, logs,
 # install (adds ~/.local/bin/mirador and, on Linux, an app menu entry), uninstall.
 set -euo pipefail
 
@@ -212,6 +213,17 @@ case "${1:-open}" in
     running || start_server
     open_window
     ;;
+  link)
+    # Only a fresh one-time link to the running server, on stdout, and no window: for a phone or another
+    # machine through the ssh -L tunnel (docs/security.md). It starts nothing. The link works once,
+    # within 60 s (LAUNCH_NONCE_TTL_MS in src/http/security.ts).
+    if ! running; then
+      echo "mirador: not running; start it with mirador first, then run mirador link" >&2
+      exit 1
+    fi
+    launch_url
+    echo
+    ;;
   stop)
     if ! running; then echo "mirador: not running"; exit 0; fi
     pid="$(field pid)"
@@ -268,7 +280,7 @@ EOF
     echo "mirador: removed the launcher and the app menu entry (the app folder is untouched)"
     ;;
   *)
-    echo "usage: mirador [open|stop|status|logs|install|uninstall]" >&2
+    echo "usage: mirador [open|link|stop|status|logs|install|uninstall]" >&2
     exit 2
     ;;
 esac

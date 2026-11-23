@@ -2,7 +2,8 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- interactive-widget: a phone's soft keyboard shrinks the page, so the phone terminal's key bar stays above it (public/styles/phone.css). -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
   <title>Mirador</title>
   <!-- First on purpose: redeems the one-time launch link before anything else loads (it lives 60 s from the launcher's request). -->
   <script src="/launch-boot.js"></script>
@@ -53,6 +54,9 @@
   <!-- Credits -->
   <link rel="stylesheet" href="/styles/credits.css">
 
+  <!-- Phone layout: last, since under 600px it overrides the sheets above. -->
+  <link rel="stylesheet" href="/styles/phone.css">
+
   <script type="module" src="/app.js"></script>
 </head>
 <body>
@@ -63,6 +67,8 @@
     <button type="button" class="btn icon icon-btn side-show show-side" data-side="sidebar" aria-controls="sidebar" aria-expanded="false" data-i18n-label="side.show.sidebar" data-i18n-title="side.show.sidebar"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-sidebar"/></svg></button>
     <!-- Opens the credits (public/features/credits.js). -->
     <button type="button" class="brand" id="credits-open" translate="no" aria-haspopup="dialog" data-i18n-label="credits.open" data-i18n-title="credits.open"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-mark"/></svg>Mirador</button>
+    <!-- The phone layout's way back to the inbox, shown only in its deck (public/features/phone.js). -->
+    <button type="button" class="btn phone-to-inbox" id="phone-to-inbox"></button>
     <div class="topbar-slot" data-slot="topbar"></div>
     <div class="topbar-actions">
       <!-- Shown only while the autopilot is on (public/features/settings.js). -->
@@ -98,6 +104,8 @@
     </aside>
 
     <section class="workspace" data-i18n-label="term.label">
+      <!-- The phone layout's terminal view (public/features/phone.js): its back control here, its key bar under the panes. -->
+      <div class="phone-term-head" id="phone-term-head"></div>
       <div class="tabs" id="tabs" role="tablist"></div>
       <div class="panes" id="panes" data-layout="tabs">
         <!-- Shown by public/terminals.js while the state filter hides every terminal. -->
@@ -110,6 +118,7 @@
           <p id="empty-hint"></p>
         </div>
       </div>
+      <div class="phone-keys" id="phone-keys" role="toolbar" data-i18n-label="term.keys.label"></div>
     </section>
 
     <aside class="panel" id="panel" data-i18n-label="overview.leftOff">
@@ -132,7 +141,10 @@
         <button type="button" class="btn" id="day-today" data-i18n="day.today">Today</button>
         <button type="button" class="btn" id="show-all" data-i18n="panel.overview" data-i18n-title="panel.overviewTitle" hidden>Overview</button>
       </div>
+      <!-- The phone layout's inbox view (public/features/phone.js): its sticky header over the cards, and the link to the full UI under them. -->
+      <div class="phone-head" id="phone-inbox-head"></div>
       <section class="inbox-slot" data-slot="inbox" hidden></section>
+      <div class="phone-foot" id="phone-inbox-foot"></div>
       <div class="panel-body" id="panel-body"></div>
     </aside>
   </main>

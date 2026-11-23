@@ -5,6 +5,12 @@ All notable changes to Mirador, written for the people who run it. The format fo
 
 ## Unreleased
 
+### Added
+
+- On a phone (under 600 px wide), Mirador opens on the **Te esperan / Waiting for you** inbox, full screen: a header that stays on top with the count and **En vivo / Live** or **Reconectando… / Reconnecting…**, cards that read the reason first, and 44 px touch targets on a touch screen. A card opens its terminal full screen with a key bar (Esc, Tab, the arrows, Enter). See [Opening Mirador from another machine](docs/security.md#opening-mirador-from-another-machine) for the `ssh -L` tunnel (#41).
+- `mirador link` prints a fresh one-time link for a phone or another machine, without trying to open a window (#41).
+- **Cerrar sesión en las demás ventanas / Sign out the other windows** under **Ajustes / Settings** signs out every other window and closes its terminals, for a lost phone (#41).
+
 ## [0.2.0-rc.1] - 2026-11-23
 
 Release candidate for 0.2.0, published as a pre-release to rehearse the release and the install from its

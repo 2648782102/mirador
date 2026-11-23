@@ -13,6 +13,7 @@ import { LEFT_OFF_MAX_LINE_BYTES, LeftOffStore, leftOffDir } from '../../memory/
 import { provideNightAttention, whenNightService } from '../../night/service.ts';
 import type { RouteModule } from '../context.ts';
 import { HttpError, SECURITY_HEADERS, sendJson, sendNoContent } from '../respond.ts';
+import { bearerToken, sessionClosers } from '../security.ts';
 
 const APP_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const SHIM = join(APP_DIR, 'bin', 'herdr-shim');
@@ -117,7 +118,7 @@ export const inboxRoutes: RouteModule = async (ctx) => {
     {
       method: 'GET',
       path: '/api/inbox/stream',
-      handler: ({ res }) => {
+      handler: ({ req, res }) => {
         if (streams >= MAX_STREAMS) throw new HttpError(429, 'too many inbox streams', 'inbox_busy');
         streams++;
         res.writeHead(200, { ...SECURITY_HEADERS, 'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-store' });
@@ -125,11 +126,25 @@ export const inboxRoutes: RouteModule = async (ctx) => {
         send(store.items(), store.nightNotes());
         const unsubscribe = store.subscribe(send);
         const heartbeat = setInterval(() => res.write('{}\n'), HEARTBEAT_MS);
-        res.once('close', () => {
+        let open = true;
+        const stop = () => {
+          if (!open) return;
+          open = false;
           unsubscribe();
           clearInterval(heartbeat);
+          unregister();
           streams--;
-        });
+        };
+        // "Sign out the other windows" ends the stream of every session it forgets: nothing more is sent.
+        const token = bearerToken(req.headers.authorization);
+        const unregister =
+          (token &&
+            sessionClosers(ctx.terminals)?.add(token, () => {
+              stop();
+              res.end();
+            })) ||
+          (() => {});
+        res.once('close', stop);
       },
     },
   ];

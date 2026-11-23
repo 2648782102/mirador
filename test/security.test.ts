@@ -123,3 +123,36 @@ test('protocolToken reads the auth token offered as a WebSocket subprotocol', ()
   assert.equal(protocolToken(new Set(['mirador.v1'])), undefined);
   assert.equal(protocolToken(undefined), undefined);
 });
+
+test('signing out the others forgets every session but the caller\'s and returns the ones it forgot', () => {
+  const sessions = new Sessions(32);
+  const caller = sessions.create();
+  const phone = sessions.create();
+  const other = sessions.create();
+  assert.deepEqual(new Set(sessions.signOutOthers(caller)), new Set([phone, other]));
+  assert.equal(sessions.has(caller), true);
+  assert.equal(sessions.has(phone), false);
+  assert.equal(sessions.has(other), false);
+  assert.deepEqual(sessions.signOutOthers(caller), [], 'nothing left to forget');
+  assert.equal(sessions.has(caller), true);
+});
+
+test('signing out with an unknown or missing caller forgets nothing', () => {
+  const sessions = new Sessions(32);
+  const window = sessions.create();
+  assert.deepEqual(sessions.signOutOthers('made-up'), []);
+  assert.deepEqual(sessions.signOutOthers(undefined), []);
+  assert.equal(sessions.has(window), true);
+});
+
+test('preserved: after a sign-out the cap still forgets the least recently used session', () => {
+  const sessions = new Sessions(2);
+  const caller = sessions.create();
+  sessions.create();
+  sessions.signOutOthers(caller);
+  const idle = sessions.create();
+  assert.equal(sessions.has(caller), true);
+  sessions.create();
+  assert.equal(sessions.has(idle), false);
+  assert.equal(sessions.has(caller), true);
+});

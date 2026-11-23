@@ -42,3 +42,13 @@ export function waitLabel(since, now) {
   if (!(minutes >= 1)) return { key: 'inbox.waited.now', vars: undefined };
   return minutes < 60 ? { key: 'inbox.waited.minutes', vars: { count: minutes } } : { key: 'inbox.waited.hours', vars: { count: Math.floor(minutes / 60) } };
 }
+
+/**
+ * The parts of a card, in order, and whether its place names the workspace. The desktop shows the
+ * place first and names the workspace only in "needs you" (`named`: "finished" is grouped by
+ * workspace); the phone layout reads the reason first, then workspace › folder, then the wait,
+ * every card naming its workspace. Parts: 'place', 'reason', 'detail', 'night' and 'meta' (the wait).
+ */
+export function cardLayout(phone, named) {
+  return phone ? { parts: ['reason', 'place', 'meta', 'detail', 'night'], named: true } : { parts: ['place', 'reason', 'detail', 'night', 'meta'], named };
+}

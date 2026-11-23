@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AttentionStore, type AttentionItem } from '../src/attention/store.ts';
 import type { TerminalInfo } from '../src/terminals/registry.ts';
-import { inboxGroups, waitLabel } from '../public/features/inbox-model.js';
+import { cardLayout, inboxGroups, waitLabel } from '../public/features/inbox-model.js';
 
 function terminal(id: string, workspaceId: string, rel: string): TerminalInfo {
   return { id, workspaceId, rel, cwd: `/home/you/${workspaceId}/${rel}`, title: rel || workspaceId, kind: 'agent', status: 'running', createdAt: '2026-10-28T10:00:00.000Z' };
@@ -76,6 +76,19 @@ test('finished turns and night notes keep their place: by workspace, then folder
     ['api', ['n1*', 'r2']],
   ]);
   assert.equal(review.count, 4);
+});
+
+test('S4: on the phone a card reads its reason first, then workspace › folder, then the wait', () => {
+  for (const named of [true, false]) {
+    const layout = cardLayout(true, named);
+    assert.deepEqual(layout.parts, ['reason', 'place', 'meta', 'detail', 'night']);
+    assert.equal(layout.named, true, 'every phone card names its workspace, finished ones too');
+  }
+});
+
+test('wide layout unchanged: the place, the reason, the detail, the night line, then the wait; only "needs you" names the workspace', () => {
+  assert.deepEqual(cardLayout(false, true), { parts: ['place', 'reason', 'detail', 'night', 'meta'], named: true });
+  assert.deepEqual(cardLayout(false, false), { parts: ['place', 'reason', 'detail', 'night', 'meta'], named: false });
 });
 
 test('the time waited reads now, in minutes, then in hours', () => {

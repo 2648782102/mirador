@@ -10,9 +10,11 @@ import {
   THEME_CHOICES,
   nightSwitchView,
   pressedChoices,
+  SIGN_OUT_OTHERS,
   sheetCloses,
+  signOutResult,
 } from '../public/settings-model.js';
-import { LANGUAGES, MESSAGES } from '../public/i18n.js';
+import { LANGUAGES, MESSAGES, translate } from '../public/i18n.js';
 import { THEMES } from '../public/theme-model.js';
 import { SYMBOLS } from '../public/icons.js';
 import { showsTabsBar } from '../public/terminal-groups.js';
@@ -107,4 +109,35 @@ test('S4: a click inside the sheet or on its button does not close it from outsi
 test('S5: a dialog the sheet opened (turning the night shift on asks until when) keeps the sheet open under it', () => {
   assert.equal(sheetCloses('escape', { open: true, inDialog: true }), null);
   assert.equal(sheetCloses('click', { open: true, inDialog: true, focusInSheet: true }), null);
+});
+
+test('phone S8: "Sign out the other windows" sits under the rows, not among them, and asks before it clears anything', () => {
+  assert.equal(SETTINGS_ROWS.some((row: { id: string }) => row.id === 'signOut'), false, 'the six rows stay as they are');
+  assert.deepEqual(
+    [SIGN_OUT_OTHERS.key, SIGN_OUT_OTHERS.hintKey, SIGN_OUT_OTHERS.buttonKey].map((key) => [en[key], es[key]]),
+    [
+      ['Other windows', 'Otras ventanas'],
+      ['Signs out a lost phone or any other window; this one stays.', 'Cierra la sesión de un teléfono perdido o de otra ventana; esta sigue abierta.'],
+      ['Sign out the other windows', 'Cerrar sesión en las demás ventanas'],
+    ],
+  );
+  const { title, message, confirmLabel } = SIGN_OUT_OTHERS.confirm;
+  assert.deepEqual([title, message, confirmLabel].map((key) => [en[key], es[key]]), [
+    ['Sign out the other windows?', '¿Cerrar sesión en las demás ventanas?'],
+    [
+      'Every other window and phone with {brand} open loses access at once, and its terminals disconnect. This window stays signed in. To sign in again, they need a new link (mirador link on the host).',
+      'Todas las demás ventanas y teléfonos con {brand} abierto pierden el acceso al momento y sus terminales se desconectan. Esta ventana sigue con su sesión. Para volver a entrar necesitan un enlace nuevo (mirador link en el equipo).',
+    ],
+    ['Sign out', 'Cerrar sesión'],
+  ]);
+});
+
+test('phone S8: the result line says how many windows were signed out, in English and Spanish', () => {
+  const said = (cleared: number) => {
+    const { key, vars } = signOutResult(cleared);
+    return [translate('en', key, vars), translate('es', key, vars)];
+  };
+  assert.deepEqual(said(0), ['No other window was signed in.', 'No había otra ventana con sesión.']);
+  assert.deepEqual(said(1), ['Signed out 1 other window.', 'Se cerró la sesión de 1 ventana más.']);
+  assert.deepEqual(said(3), ['Signed out 3 other windows.', 'Se cerró la sesión de 3 ventanas más.']);
 });

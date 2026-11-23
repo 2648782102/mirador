@@ -120,4 +120,57 @@ export class Sessions {
     this.tokens.push(...this.tokens.splice(index, 1));
     return true;
   }
+
+  /**
+   * "Sign out the other windows": forgets every session but `keep`'s and returns the tokens it
+   * forgot, so the server can close what they hold open (SessionClosers). An unknown or missing `keep` forgets
+   * nothing, so a caller can never sign itself out this way.
+   */
+  signOutOthers(keep: string | undefined): string[] {
+    if (!keep) return [];
+    const index = this.tokens.findIndex((known) => tokensMatch(keep, known));
+    if (index < 0) return [];
+    const kept = this.tokens[index];
+    return this.tokens.splice(0, this.tokens.length, kept).filter((token) => token !== kept);
+  }
+}
+
+/**
+ * What "sign out the other windows" ends at once, per session token: every open terminal socket and
+ * inbox stream registers its closer here while it is open. Only a sign-out runs them; a session that
+ * only falls out of the 32-session cap keeps what it has open.
+ */
+export class SessionClosers {
+  private readonly byToken = new Map<string, Set<() => void>>();
+
+  /** Runs `close` if `token`'s session is signed out. Returns the unregister, for when it closes by itself. */
+  add(token: string, close: () => void): () => void {
+    let closers = this.byToken.get(token);
+    if (!closers) this.byToken.set(token, (closers = new Set()));
+    closers.add(close);
+    return () => {
+      closers.delete(close);
+      if (!closers.size && this.byToken.get(token) === closers) this.byToken.delete(token);
+    };
+  }
+
+  /** Runs, once, every closer registered for `tokens`. */
+  close(tokens: string[]): void {
+    for (const token of tokens) {
+      const closers = this.byToken.get(token);
+      this.byToken.delete(token);
+      for (const close of closers ?? []) close();
+    }
+  }
+}
+
+const closersByApp = new WeakMap<object, SessionClosers>();
+
+/** Lets route modules reach the server's SessionClosers through `app` (the terminal registry). */
+export function provideSessionClosers(app: object, closers: SessionClosers): void {
+  closersByApp.set(app, closers);
+}
+
+export function sessionClosers(app: object): SessionClosers | undefined {
+  return closersByApp.get(app);
 }

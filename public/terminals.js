@@ -27,6 +27,7 @@ import { showsAsTab } from '/terminal-kind-model.js';
 import { matches, normalizeSelection, paneToShow, showsTerminal } from '/features/state-filter-model.js';
 import { fileChecker, findFileLinks, linkRange, openableFiles, splitPath } from '/features/file-links-model.js';
 import { revealRequest } from '/features/tree-reveal-model.js';
+import { keyBytes } from '/features/phone-model.js';
 
 const terminals = new Map();
 const INPUT_CHUNK = 64 * 1024;
@@ -828,6 +829,19 @@ function toggleGroup(workspaceId) {
   collapsedGroups.add(workspaceId);
   saveCollapsed();
   applyLayout();
+}
+
+/**
+ * The phone key bar (features/phone.js): types `key` (a phone-model.js KEY_BAR key) into terminal
+ * `id` as its keyboard would, the arrows in the cursor mode the program set, through xterm's own
+ * input path (what a key press sends to onData). False if there is no such terminal or key.
+ */
+export function typeKey(id, key) {
+  const record = terminals.get(id);
+  const bytes = record && keyBytes(key, { applicationCursor: record.term.modes.applicationCursorKeysMode });
+  if (!bytes) return false;
+  record.term.input(bytes, true);
+  return true;
 }
 
 /** Refits every visible terminal, e.g. after a side panel opened or closed. */
