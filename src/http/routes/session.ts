@@ -8,8 +8,8 @@ import { bearerToken, type Sessions } from '../security.ts';
 /**
  * DELETE /api/session/others → `{ cleared }`, how many sessions it forgot: every one but the
  * caller's. It sits behind the server's Host, Origin and session checks like every /api/ route, so
- * the caller's token is known. `closed` gets the forgotten tokens, whose terminal sockets the
- * server then closes.
+ * the caller's token is known. `closed` gets the forgotten tokens, whose terminal sockets and inbox
+ * streams the server then ends (SessionClosers).
  */
 export function signOutOthersRoute(sessions: Sessions, closed: (tokens: string[]) => void): Route {
   return {

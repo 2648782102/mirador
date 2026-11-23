@@ -1,10 +1,11 @@
 // "Sign out the other windows" (phone inbox, #41 S8 and S11): DELETE /api/session/others clears every
 // session but the caller's, behind the same session token and Origin checks as every API call, and
-// closes the terminal sockets the cleared sessions held. Runs the real server on a scratch state.
+// closes the terminal sockets and ends the inbox streams the cleared sessions held. Runs the real
+// server on a scratch state.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { createServer } from 'node:http';
+import { createServer, request } from 'node:http';
 import { createRequire } from 'node:module';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -17,6 +18,7 @@ const APP_DIR = fileURLToPath(new URL('..', import.meta.url));
 
 let scratch: string;
 let server: ChildProcess;
+let port: number;
 let base: string;
 let origin: string;
 let launchSecret: string;
@@ -98,19 +100,77 @@ function upgradeStatus(token: string, id: string): Promise<number | 'open'> {
   );
 }
 
+type Item = { terminalId: string; label: string };
+
+/** Reads the NDJSON inbox stream line by line; `next` gives the next inbox, or 'ended' once the server ends it. */
+async function openStream(token: string) {
+  const controller = new AbortController();
+  const response = await fetch(`${base}/api/inbox/stream`, { headers: { authorization: `Bearer ${token}` }, signal: controller.signal });
+  assert.equal(response.status, 200);
+  const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = '';
+  return {
+    async next(): Promise<Item[] | 'ended'> {
+      for (;;) {
+        const end = buffer.indexOf('\n');
+        if (end >= 0) {
+          const line = JSON.parse(buffer.slice(0, end));
+          buffer = buffer.slice(end + 1);
+          if (Array.isArray(line.items)) return line.items;
+          continue;
+        }
+        const { value, done } = await reader.read();
+        if (done) return 'ended';
+        buffer += value;
+      }
+    },
+    close: () => controller.abort(),
+  };
+}
+
+/** `promise`, or 'timeout' after `ms`. */
+function within<T>(promise: Promise<T>, ms: number): Promise<T | 'timeout'> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<'timeout'>((resolve) => (timer = setTimeout(() => resolve('timeout'), ms)));
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+/** A raw request with exactly the `host` given (none set by Node): status and body. */
+function rawRequest(host: string, method: string, path: string, headers: Record<string, string>): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const req = request({ host: '127.0.0.1', port, method, path, setHost: false, headers: { host, ...headers } }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => (body += chunk));
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
 before(async () => {
   scratch = await realpath(await mkdtemp(join(scratchBase(), 'mirador-sign-out-')));
   await mkdir(join(scratch, 'root'), { recursive: true });
+  // A stand-in for gentle-shell (the default agent command, found on PATH): it reports a blocker
+  // through the herdr shim, as the attention bridge does, so an agent terminal makes an inbox card.
+  await mkdir(join(scratch, 'bin'), { recursive: true });
+  await writeFile(join(scratch, 'bin', 'gentle-shell'), [
+    '#!/bin/sh',
+    '"$HERDR_BIN_PATH" pane report-metadata "$HERDR_PANE_ID" --source mirador:attention --agent pi --seq 1 --token "blocked=Guarded command confirmation"',
+    'exec sleep 600',
+    '',
+  ].join('\n'), { mode: 0o755 });
   await mkdir(join(scratch, 'cfg', 'mirador'), { recursive: true });
   await writeFile(join(scratch, 'cfg', 'mirador', 'config.json'), JSON.stringify({ root: join(scratch, 'root'), engramUrl: 'http://127.0.0.1:1' }));
   await mkdir(join(scratch, 'gentle-ai'), { recursive: true });
   await writeFile(join(scratch, 'gentle-ai', 'state.json'), '{}');
-  const port = await freePort();
+  port = await freePort();
   base = `http://127.0.0.1:${port}`;
   origin = base;
   server = spawn(process.execPath, ['src/server.ts'], {
     cwd: APP_DIR,
-    env: { ...process.env, GENTLE_AI_HOME: join(scratch, 'gentle-ai'), HOME: join(scratch, 'home'), XDG_RUNTIME_DIR: join(scratch, 'run'), XDG_STATE_HOME: join(scratch, 'state'), XDG_CONFIG_HOME: join(scratch, 'cfg'), MIRADOR_PORT: String(port), MIRADOR_SCOPES: '0' },
+    env: { ...process.env, PATH: `${join(scratch, 'bin')}:${process.env.PATH}`, GENTLE_AI_HOME: join(scratch, 'gentle-ai'), HOME: join(scratch, 'home'), XDG_RUNTIME_DIR: join(scratch, 'run'), XDG_STATE_HOME: join(scratch, 'state'), XDG_CONFIG_HOME: join(scratch, 'cfg'), MIRADOR_PORT: String(port), MIRADOR_SCOPES: '0' },
     stdio: 'ignore',
   });
   const state = await waitFor(async () => JSON.parse(await readFile(join(scratch, 'run', 'mirador', 'state.json'), 'utf8')));
@@ -202,6 +262,57 @@ test('S8: a terminal socket of a cleared session is closed and cannot reconnect;
   } finally {
     await api(caller, 'DELETE', `/api/terminals/${id}`);
   }
+});
+
+test('S8: a cleared session\'s open inbox stream ends; the caller\'s stream keeps flowing', async () => {
+  const caller = await login();
+  await alone(caller);
+  const phone = await login();
+  const mine = await openStream(caller);
+  const theirs = await openStream(phone);
+  let id: string | undefined;
+  try {
+    assert.deepEqual([await mine.next(), await theirs.next()], [[], []], 'both streams start with the current inbox');
+
+    assert.deepEqual(await (await signOutOthers(caller)).json(), { cleared: 1 });
+    assert.equal(await within(theirs.next(), 3000), 'ended', 'the cleared session\'s stream ends at once');
+
+    // A new card still reaches the caller's stream.
+    const created = await api(caller, 'POST', '/api/terminals', { ws: 'dev', rel: '', kind: 'agent', cols: 80, rows: 24 });
+    assert.equal(created.status, 201);
+    id = ((await created.json()) as { id: string }).id;
+    const pushed = await within(mine.next(), 8000);
+    assert.notEqual(pushed, 'timeout', 'the caller\'s stream is still open');
+    assert.deepEqual((pushed as Item[]).map((item) => [item.terminalId, item.label]), [[id, 'Guarded command confirmation']]);
+    assert.equal(await statusOf(phone), 401);
+  } finally {
+    mine.close();
+    theirs.close();
+    if (id) await api(caller, 'DELETE', `/api/terminals/${id}`);
+  }
+});
+
+test('S11: a wrong Host, another method or path, and an altered or truncated token clear nothing', async () => {
+  const caller = await login();
+  await alone(caller);
+  const phone = await login();
+  const headers = { origin, authorization: `Bearer ${caller}` };
+
+  for (const host of [`evil.example:${port}`, `127.0.0.1:${port + 1}`, '']) {
+    const answer = await rawRequest(host, 'DELETE', '/api/session/others', headers);
+    assert.deepEqual([answer.status, JSON.parse(answer.body)], [421, { error: 'unexpected host' }], `host ${JSON.stringify(host)}`);
+  }
+  for (const method of ['GET', 'POST', 'PUT']) {
+    assert.equal((await api(caller, method, '/api/session/others')).status, 404, method);
+  }
+  assert.equal((await api(caller, 'DELETE', '/api/session/others/')).status, 404, 'a trailing slash');
+  for (const token of [`${caller}x`, caller.slice(0, -1)]) {
+    const refused = await signOutOthers(token);
+    assert.deepEqual([refused.status, await refused.json()], [401, { error: 'open Mirador with its launcher' }]);
+  }
+
+  assert.deepEqual([await statusOf(caller), await statusOf(phone)], [200, 200], 'both sessions still work');
+  assert.deepEqual(await (await signOutOthers(caller)).json(), { cleared: 1 }, 'the refused calls cleared nothing');
 });
 
 test('preserved: a launch link still redeems once, and past 32 sessions the least recently used is still the one forgotten', async () => {

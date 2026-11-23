@@ -59,6 +59,7 @@ import { gitDiffRoutes } from './http/routes/git-diff.ts';
 import {
   APP_PROTOCOL,
   LaunchNonces,
+  SessionClosers,
   Sessions,
   bearerToken,
   createToken,
@@ -66,6 +67,7 @@ import {
   isAllowedOrigin,
   launchNonceTtlMs,
   protocolToken,
+  provideSessionClosers,
   tokensMatch,
 } from './http/security.ts';
 import { AGENT_RC } from './terminals/agent-rc.ts';
@@ -248,6 +250,11 @@ async function main(): Promise<void> {
   // Route modules reach the profiles, the budget and the telemetry through the terminal registry.
   provideProfiles(terminals, profiles);
   provideCallAccounting(terminals, { budget, telemetry });
+  // What "sign out the other windows" ends at once: the forgotten sessions' terminal sockets (below)
+  // and inbox streams (src/http/routes/inbox.ts), so a lost phone stops at once. A session that only
+  // falls out of the 32-session window keeps what it has open, as before.
+  const closers = new SessionClosers();
+  provideSessionClosers(terminals, closers);
 
   async function serveStatic(pathname: string, res: ServerResponse, acceptEncoding?: string): Promise<void> {
     const bundled = await bundle.serve(pathname, acceptEncoding);
@@ -310,20 +317,7 @@ async function main(): Promise<void> {
   for (const module of ROUTE_MODULES) for (const route of await module(ctx)) router.add(route);
   // The UI's start-up state in one request, from the config and workspaces routes registered above.
   router.add(bootstrapRoute((path) => routeJson(router, path)));
-  // Each open terminal socket and the session that opened it. "Sign out the other windows" closes
-  // the sockets of the sessions it forgets, so a lost phone's open terminal stops at once. A session
-  // that only falls out of the 32-session window keeps its open sockets, as before.
-  const socketSessions = new Map<WebSocket, string>();
-  router.add(
-    signOutOthersRoute(sessions, (tokens) => {
-      const forgotten = new Set(tokens);
-      for (const [ws, token] of socketSessions) {
-        if (!forgotten.has(token)) continue;
-        socketSessions.delete(ws);
-        ws.close(1008, 'signed out');
-      }
-    }),
-  );
+  router.add(signOutOthersRoute(sessions, (tokens) => closers.close(tokens)));
   readNightStatus = async () => {
     const status = await routeJson(router, '/api/night');
     return status && typeof status === 'object' ? (status as NightStatusView) : null;
@@ -413,13 +407,15 @@ async function main(): Promise<void> {
       socket.destroy();
       return;
     }
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      socketSessions.set(ws, token!);
-      attachTerminal(ws, id!);
-    });
+    wss.handleUpgrade(req, socket, head, (ws) => attachTerminal(ws, id!, token!));
   });
 
-  function attachTerminal(ws: WebSocket, id: string): void {
+  function attachTerminal(ws: WebSocket, id: string, token: string): void {
+    let signedOut = false;
+    const unregister = closers.add(token, () => {
+      signedOut = true;
+      ws.close(1008, 'signed out');
+    });
     const send = (message: unknown) => ws.readyState === ws.OPEN && ws.send(JSON.stringify(message));
     const attachment = terminals.attach(id, {
       onData: (d) => send({ t: 'o', d }),
@@ -436,13 +432,13 @@ async function main(): Promise<void> {
         return;
       }
       // A socket whose session was signed out is closing: it types nothing more.
-      if (!socketSessions.has(ws)) return;
+      if (signedOut) return;
       if (typeof message !== 'object' || message === null || !terminals.get(id)) return;
       if (message.t === 'i' && typeof message.d === 'string') terminals.write(id, message.d);
       if (message.t === 'r') terminals.resize(id, clampSize(message.c, 80), clampSize(message.r, 24));
     });
     ws.on('close', () => {
-      socketSessions.delete(ws);
+      unregister();
       attachment.detach();
     });
   }
