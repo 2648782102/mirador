@@ -42,6 +42,12 @@ Planned for 0.2.0.
 
 - The foot of **Dónde quedó / Where it left off** names Engram when the summary comes from it ("Engram session
   summary · …").
+- `bootstrap.sh`: a first prebuilt install cut off abruptly no longer blocks the next run, which removes the
+  half-done `.download.*` folders it left and goes on; an update says when a running server keeps the previous
+  version until `mirador stop && mirador`.
+- Release: the workflow pins the bundled Node's sha256 per architecture, and a `smoke` job checks every archive
+  in clean AlmaLinux 8 (glibc 2.28) and Debian 13 containers (doctor, server start, size and timings in the job
+  summary) before `publish` can run.
 
 ### Documentation
 

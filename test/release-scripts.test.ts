@@ -1,8 +1,11 @@
 // The release workflow's shell helpers under scripts/release/, run with stubs and local files only:
 //   check-tag.sh  a release tag must be v<package.json's version>;
-//   fetch-node.sh the official Node tarball is unpacked only when it matches its line in SHASUMS256.txt
-//                 (curl is a stub serving local files, so nothing reaches nodejs.org);
-//   check-glibc.sh a built addon must name glibc 2.28 at most, and name some glibc (objdump is a stub).
+//   fetch-node.sh the official Node tarball is unpacked only when it matches the sha256 pinned in release.yml,
+//                 whatever the SHASUMS256.txt served beside it says (curl is a stub serving local files, so
+//                 nothing reaches nodejs.org);
+//   check-glibc.sh a built addon must name glibc 2.28 at most, and name some glibc (objdump is a stub);
+//   smoke.sh      an archive is checked in each container given, and the job summary gets its size and timings
+//                 (docker is a stub; the containers themselves run in the release workflow).
 // Every PATH starts with a folder holding only `node`, a link to the running Node binary, so no script ever
 // reaches a node shim (mise's would install a Node over the network in a scratch HOME).
 // pins.sh, which prints the lines a promotion PR pins, is tested with the bootstrap script it feeds.
@@ -122,36 +125,44 @@ async function nodeDist(shasums: (name: string, sha: string) => string): Promise
   return { dir, out: join(dir, 'out'), curlLog, env: { PATH: `${stubs}:${PATH}` }, name, sha };
 }
 
-test('fetch-node.sh downloads the Node tarball and SHASUMS256.txt from nodejs.org over https, and unpacks the tarball when it matches its line', async () => {
-  const d = await nodeDist((name, sha) => `${'1'.repeat(64)}  node-v24.0.0-linux-arm64.tar.xz\n${sha}  ${name}\n${'2'.repeat(64)}  ${name}.extra\n`);
-  const result = await sh('fetch-node.sh', ['24.0.0', 'x64', d.out], d.env);
-  assert.deepEqual(result, { code: 0, stdout: `fetch-node.sh: ${d.name}.tar.xz matches its sha256 in SHASUMS256.txt; unpacked it into ${d.out}/${d.name}\n`, stderr: '' });
-  assert.deepEqual((await readFile(d.curlLog, 'utf8')).split('\n').filter(Boolean), [
-    `-fsSL --proto =https --tlsv1.2 -o ${d.out}/SHASUMS256.txt ${DIST}/v24.0.0/SHASUMS256.txt`,
-    `-fsSL --proto =https --tlsv1.2 -o ${d.out}/${d.name}.tar.xz ${DIST}/v24.0.0/${d.name}.tar.xz`,
-  ]);
+test('fetch-node.sh downloads only the Node tarball from nodejs.org over https, and unpacks it when it matches the pinned sha256', async () => {
+  const d = await nodeDist((name, sha) => `${sha}  ${name}\n`);
+  const result = await sh('fetch-node.sh', ['24.0.0', 'x64', d.sha, d.out], d.env);
+  assert.deepEqual(result, { code: 0, stdout: `fetch-node.sh: ${d.name}.tar.xz matches its pinned sha256 ${d.sha}; unpacked it into ${d.out}/${d.name}\n`, stderr: '' });
+  assert.deepEqual((await readFile(d.curlLog, 'utf8')).split('\n').filter(Boolean), [`-fsSL --proto =https --tlsv1.2 -o ${d.out}/${d.name}.tar.xz ${DIST}/v24.0.0/${d.name}.tar.xz`]);
   assert.equal(await readFile(join(d.out, d.name, 'bin', 'node'), 'utf8'), '#!/bin/sh\necho fake node\n');
+  assert.deepEqual(await readdir(d.out), [d.name]);
 });
 
-test('fetch-node.sh unpacks nothing when the tarball does not match SHASUMS256.txt, or has no line there', async () => {
-  const wrong = await nodeDist((name) => `${'0'.repeat(64)}  ${name}\n`);
-  const mismatch = await sh('fetch-node.sh', ['24.0.0', 'x64', wrong.out], wrong.env);
-  assert.deepEqual(mismatch, {
+test('fetch-node.sh unpacks nothing when the tarball differs from the pinned sha256, even when the SHASUMS256.txt served beside it agrees with the tarball', async () => {
+  const pinned = '0'.repeat(64);
+  const d = await nodeDist((name, sha) => `${sha}  ${name}\n`);
+  const result = await sh('fetch-node.sh', ['24.0.0', 'x64', pinned, d.out], d.env);
+  assert.deepEqual(result, {
     code: 1,
     stdout: '',
-    stderr: `fetch-node.sh: ${wrong.name}.tar.xz does not match its sha256 in SHASUMS256.txt (expected ${'0'.repeat(64)}, got ${wrong.sha}); nothing was unpacked\n`,
+    stderr: `fetch-node.sh: ${d.name}.tar.xz does not match its pinned sha256 (expected ${pinned}, got ${d.sha}); nothing was unpacked\n`,
   });
-  assert.deepEqual(await readdir(wrong.out), ['SHASUMS256.txt']);
+  assert.deepEqual(await readdir(d.out), []);
+});
 
-  const missing = await nodeDist(() => `${'1'.repeat(64)}  node-v24.0.0-linux-arm64.tar.xz\n`);
-  const none = await sh('fetch-node.sh', ['24.0.0', 'x64', missing.out], missing.env);
-  assert.deepEqual(none, { code: 1, stdout: '', stderr: `fetch-node.sh: SHASUMS256.txt from ${DIST}/v24.0.0 has no line for ${missing.name}.tar.xz; nothing was unpacked\n` });
-  assert.equal(await exists(join(missing.out, missing.name)), false);
+test('fetch-node.sh downloads nothing when the pinned sha256 is missing or is not 64 lowercase hex digits', async () => {
+  const d = await nodeDist((name, sha) => `${sha}  ${name}\n`);
+  for (const pinned of ['', d.sha.slice(1), d.sha.toUpperCase(), `${d.sha};id`, ` ${d.sha}`]) {
+    assert.deepEqual(
+      await sh('fetch-node.sh', ['24.0.0', 'x64', pinned, d.out], d.env),
+      { code: 1, stdout: '', stderr: `fetch-node.sh: no pinned sha256 for ${d.name}.tar.xz ("${pinned}" is not 64 lowercase hex digits); nothing was downloaded\n` },
+      pinned,
+    );
+  }
+  assert.equal(await exists(d.curlLog), false);
+  assert.equal(await exists(d.out), false);
 });
 
 test('fetch-node.sh refuses a version or architecture it does not build', async () => {
-  const usage = 'usage: fetch-node.sh <node-version, such as 24.22.3> <x64|arm64> <out-dir>\n';
-  for (const args of [['24.0.0', 'armv7l', '/nowhere'], ['24', 'x64', '/nowhere'], ['24.0.0;id', 'x64', '/nowhere'], ['24.0.0', 'x64']]) {
+  const usage = 'usage: fetch-node.sh <node-version, such as 24.22.3> <x64|arm64> <pinned sha256 of its tarball> <out-dir>\n';
+  const sha = 'a'.repeat(64);
+  for (const args of [['24.0.0', 'armv7l', sha, '/nowhere'], ['24', 'x64', sha, '/nowhere'], ['24.0.0;id', 'x64', sha, '/nowhere'], ['24.0.0', 'x64', '/nowhere'], ['24.0.0', 'x64', sha]]) {
     assert.deepEqual(await sh('fetch-node.sh', args), { code: 2, stdout: '', stderr: usage }, args.join(' '));
   }
 });
@@ -191,4 +202,106 @@ test('check-glibc.sh stops with a clear message when the addon names no glibc sy
   assert.equal(failed.code, 1);
   assert.equal(failed.stdout, '');
   assert.equal(failed.stderr, 'check-glibc.sh: objdump -T could not read pty.node (see above), so its glibc baseline cannot be checked\n');
+});
+
+interface Smoke {
+  dir: string;
+  archive: string;
+  dockerLog: string;
+  summary: string;
+  env: NodeJS.ProcessEnv;
+}
+
+/**
+ * A 1.5 MiB archive and a docker stub standing in for the containers: it logs its arguments, and writes the
+ * result file smoke-in-container.sh writes into the folder mounted on /out. An image whose name has `broken`
+ * in it stops after the unpack with exit 3, as a failing doctor would.
+ */
+async function smokeBox(): Promise<Smoke> {
+  const dir = await fresh();
+  const stubs = join(dir, 'stubs');
+  const dockerLog = join(dir, 'docker.log');
+  await mkdir(join(dir, 'dist'));
+  const archive = join(dir, 'dist', 'mirador-0.2.0-linux-x64.tar.gz');
+  await writeFile(archive, Buffer.alloc(1.5 * 1024 * 1024));
+  await mkdir(stubs);
+  await writeFile(
+    join(stubs, 'docker'),
+    [
+      '#!/bin/sh',
+      `printf '%s\\n' "$*" >> '${dockerLog}'`,
+      'out= image= prev=',
+      'for arg in "$@"; do',
+      '  case "$arg" in *:/out) [ "$prev" = -v ] && out="${arg%:/out}" ;; esac',
+      '  case "$arg" in *:*@sha256:* | *broken*) image="$arg" ;; esac',
+      '  prev="$arg"',
+      'done',
+      'echo "container output for ${image%@*}"',
+      'case "$image" in',
+      '  *broken*) printf "glibc=2.28\\nunpack_ms=120\\n" > "$out/result"; exit 3 ;;',
+      '  almalinux*) printf "glibc=2.28\\nunpack_ms=120\\ndoctor_ms=800\\nstart_ms=1500\\n" > "$out/result" ;;',
+      '  *) printf "glibc=2.41\\nunpack_ms=95\\ndoctor_ms=640\\nstart_ms=1210\\n" > "$out/result" ;;',
+      'esac',
+      '',
+    ].join('\n'),
+  );
+  await chmod(join(stubs, 'docker'), 0o755);
+  const summary = join(dir, 'summary.md');
+  return { dir, archive, dockerLog, summary, env: { PATH: `${stubs}:${PATH}`, GITHUB_STEP_SUMMARY: summary } };
+}
+
+const OLDEST = `almalinux:8@sha256:${'7'.repeat(64)}`;
+const CURRENT = `debian:13-slim@sha256:${'a'.repeat(64)}`;
+const TABLE_HEAD = '| Container | glibc | Unpack | Doctor | Server start | Result |\n| --- | --- | --- | --- | --- | --- |\n';
+
+/** The docker log with each run's /out folder, a fresh temporary folder, written as <out>. */
+const dockerRuns = async (log: string) => (await readFile(log, 'utf8')).split('\n').filter(Boolean).map((line) => line.replace(/-v \S+:\/out /, '-v <out>:/out '));
+
+test('smoke.sh checks the archive in each container, read-only and offline, and writes its size and timings to the job summary', async () => {
+  const s = await smokeBox();
+  const result = await sh('smoke.sh', [s.archive, OLDEST, CURRENT], s.env);
+  const table =
+    '### mirador-0.2.0-linux-x64.tar.gz\n\nSize: 1.5 MiB (1572864 bytes)\n\n' +
+    TABLE_HEAD +
+    '| almalinux:8 | 2.28 | 120 ms | 800 ms | 1500 ms | ok |\n' +
+    '| debian:13-slim | 2.41 | 95 ms | 640 ms | 1210 ms | ok |\n';
+  assert.deepEqual(result, { code: 0, stdout: `container output for almalinux:8\ncontainer output for debian:13-slim\n\n${table}`, stderr: '' });
+  assert.equal(await readFile(s.summary, 'utf8'), table);
+  const user = `${process.getuid!()}:${process.getgid!()}`;
+  const mounts = `-v ${s.archive}:/archive/mirador-0.2.0-linux-x64.tar.gz:ro -v ${SCRIPTS.replace(/\/$/, '')}:/release:ro -v <out>:/out`;
+  assert.deepEqual(
+    await dockerRuns(s.dockerLog),
+    [OLDEST, CURRENT].map((image) => `run --rm --init --network none --user ${user} -e HOME=/tmp/home ${mounts} ${image} sh /release/smoke-in-container.sh /archive/mirador-0.2.0-linux-x64.tar.gz`),
+  );
+});
+
+test('smoke.sh still checks the other containers when one fails, marks it failed in the summary, and exits 1', async () => {
+  const s = await smokeBox();
+  const result = await sh('smoke.sh', [s.archive, 'broken:1', CURRENT], s.env);
+  const table =
+    '### mirador-0.2.0-linux-x64.tar.gz\n\nSize: 1.5 MiB (1572864 bytes)\n\n' +
+    TABLE_HEAD +
+    '| broken:1 | 2.28 | 120 ms | - | - | failed (exit 3) |\n' +
+    '| debian:13-slim | 2.41 | 95 ms | 640 ms | 1210 ms | ok |\n';
+  assert.deepEqual(result, {
+    code: 1,
+    stdout: `container output for broken:1\ncontainer output for debian:13-slim\n\n${table}`,
+    stderr: 'smoke.sh: mirador-0.2.0-linux-x64.tar.gz failed in broken:1 (exit 3); see its output above\n',
+  });
+  assert.equal(await readFile(s.summary, 'utf8'), table);
+  assert.equal((await dockerRuns(s.dockerLog)).length, 2);
+});
+
+test('smoke.sh refuses a missing or misnamed archive, or no container, and runs nothing', async () => {
+  const s = await smokeBox();
+  const usage = 'usage: smoke.sh <mirador-<version>-linux-<x64|arm64>.tar.gz> <image>...\n';
+  assert.deepEqual(await sh('smoke.sh', [s.archive], s.env), { code: 2, stdout: '', stderr: usage });
+  assert.deepEqual(await sh('smoke.sh', [], s.env), { code: 2, stdout: '', stderr: usage });
+  const misnamed = join(s.dir, 'dist', 'mirador.tar.gz');
+  await writeFile(misnamed, '');
+  for (const archive of [join(s.dir, 'dist', 'mirador-0.2.0-linux-riscv.tar.gz'), misnamed, join(s.dir, 'nowhere', 'mirador-0.2.0-linux-x64.tar.gz')]) {
+    assert.deepEqual(await sh('smoke.sh', [archive, CURRENT], s.env), { code: 2, stdout: '', stderr: `smoke.sh: ${archive} is not a mirador-<version>-linux-<x64|arm64>.tar.gz file\n` }, archive);
+  }
+  assert.equal(await exists(s.dockerLog), false);
+  assert.equal(await exists(s.summary), false);
 });

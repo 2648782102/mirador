@@ -8,7 +8,7 @@
 // network or the real home. The fake archive's node and bin/mirador only record how they were run.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile, spawn } from 'node:child_process';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { access, chmod, lstat, mkdir, mkdtemp, readdir, readFile, readlink, realpath, rm, symlink, writeFile } from 'node:fs/promises';
@@ -19,6 +19,7 @@ import { assertInstallerSandbox, writeNetworkBarrier } from './helpers/installer
 import { PIN_NAMES, readPins, withPins, type Pins } from './helpers/bootstrap-pins.ts';
 
 const SOURCE = fileURLToPath(new URL('../scripts/bootstrap.sh', import.meta.url));
+const LAUNCHER = fileURLToPath(new URL('../bin/mirador', import.meta.url));
 const RELEASES = 'https://github.com/mata-2p/mirador/releases/download';
 const GIT_ENV = { GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.invalid', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.invalid' };
 
@@ -95,18 +96,26 @@ const uname = (stubs: string, system: string, machine: string) =>
  * Builds mirador-<version>-linux-<arch>.tar.gz in the box's served folder, as the release workflow lays it out
  * (one folder holding bin/mirador, node/bin/node and the sources), and returns its sha256. Its node and
  * bin/mirador record their runs; node exits 1 when the box holds a file named doctor-fails, bin/mirador when it
- * holds launcher-fails. `withoutNode` leaves node/bin/node out.
+ * holds launcher-fails; asked for its `status`, bin/mirador says no server runs. `withoutNode` leaves
+ * node/bin/node out. `realLauncher` puts the repo's bin/mirador in, with a node/bin/node that runs this Node.
  */
-async function release(b: Box, version: string, arch: string, { withoutNode = false } = {}): Promise<string> {
+async function release(b: Box, version: string, arch: string, { withoutNode = false, realLauncher = false } = {}): Promise<string> {
   const name = `mirador-${version}-linux-${arch}`;
   const tree = join(b.dir, 'trees', version, arch);
   const root = join(tree, name);
-  if (!withoutNode) await stub(join(root, 'node', 'bin'), 'node', `printf '%s\\n' "${version} node $*" >> '${b.runLog}'\n[ ! -e '${join(b.dir, 'doctor-fails')}' ]`);
-  await stub(
-    join(root, 'bin'),
-    'mirador',
-    `printf '%s\\n' "${version} mirador $*" >> '${b.runLog}'\nif [ -e '${join(b.dir, 'launcher-fails')}' ]; then echo 'mirador: stub failed' >&2; exit 3; fi\necho 'mirador: stub ran'`,
-  );
+  if (realLauncher) {
+    await stub(join(root, 'node', 'bin'), 'node', `exec '${process.execPath}' "$@"`);
+    await mkdir(join(root, 'bin'), { recursive: true });
+    await writeFile(join(root, 'bin', 'mirador'), await readFile(LAUNCHER));
+    await chmod(join(root, 'bin', 'mirador'), 0o755);
+  } else {
+    if (!withoutNode) await stub(join(root, 'node', 'bin'), 'node', `printf '%s\\n' "${version} node $*" >> '${b.runLog}'\n[ ! -e '${join(b.dir, 'doctor-fails')}' ]`);
+    await stub(
+      join(root, 'bin'),
+      'mirador',
+      `printf '%s\\n' "${version} mirador $*" >> '${b.runLog}'\nif [ "$1" = status ]; then echo 'mirador: not running'; exit 1; fi\nif [ -e '${join(b.dir, 'launcher-fails')}' ]; then echo 'mirador: stub failed' >&2; exit 3; fi\necho 'mirador: stub ran'`,
+    );
+  }
   await mkdir(join(root, 'src'), { recursive: true });
   await writeFile(join(root, 'src', 'doctor.ts'), '// the fake doctor\n');
   const archive = join(b.served, `v${version}`, `${name}.tar.gz`);
@@ -146,17 +155,29 @@ const lines = async (path: string) => (await readFile(path, 'utf8').catch(() => 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const dataDir = (b: Box) => join(b.home, '.local', 'share', 'mirador');
 
-/** The lines a run prints when it installs `version` for `arch` into `dir`, downloading it unless `cached`. */
-function installed(dir: string, version: string, arch: string, cached = false): string {
+/**
+ * The lines a run prints when it installs `version` for `arch` into `dir`, downloading it unless `cached`:
+ * `removed` first (the leftovers it removes), `notice` right after current points at the version, and
+ * `launcher`, what bin/mirador install prints.
+ */
+function installed(
+  dir: string,
+  version: string,
+  arch: string,
+  cached = false,
+  { removed = [] as string[], notice = [] as string[], launcher = 'mirador: stub ran' } = {},
+): string {
   const url = `${RELEASES}/v${version}/mirador-${version}-linux-${arch}.tar.gz`;
   return [
+    ...removed,
     ...(cached
       ? [`bootstrap.sh: Mirador ${version} is already in ${dir}/${version}, so nothing was downloaded`]
       : [`bootstrap.sh: downloading ${url}`, 'bootstrap.sh: the download matches the sha256 pinned in this script', `bootstrap.sh: unpacked Mirador ${version} into ${dir}/${version}`]),
     `bootstrap.sh: ${dir}/current now points at ${version}`,
+    ...notice,
     'bootstrap.sh: checking the machine (doctor)',
     'bootstrap.sh: adding the launcher (bin/mirador install)',
-    'mirador: stub ran',
+    launcher,
     `bootstrap.sh: done; start Mirador with: ${dir}/current/bin/mirador`,
     '',
   ].join('\n');
@@ -454,6 +475,136 @@ test('a folder there that is neither a prebuilt install nor a git clone is left 
   assert.equal(result.stderr, `bootstrap.sh: ${dir} exists and is neither a prebuilt install of Mirador nor a git clone of it; move it away, then run this again\n`);
   assert.deepEqual(await readdir(dir), ['notes.txt']);
   assert.deepEqual(await lines(b.curlLog), []);
+});
+
+// A first install cut off abruptly (power off, SIGKILL: no trap runs) leaves only its download folders
+// (mktemp's .download.XXXXXX) in the data folder. The next run removes them and installs.
+test('a folder holding only the downloads an interrupted first install left half done is cleaned, and the install goes on', async () => {
+  const b = await box();
+  const sha = await release(b, '0.9.0', 'x64');
+  const dir = dataDir(b);
+  const name = 'mirador-0.9.0-linux-x64';
+  // One cut during the download, one during the unpacking.
+  await mkdir(join(dir, '.download.Ab3dE9'), { recursive: true });
+  await writeFile(join(dir, '.download.Ab3dE9', `${name}.tar.gz`), 'half a download');
+  await mkdir(join(dir, '.download.zZ09yx', 'unpacked', name, 'bin'), { recursive: true });
+  await writeFile(join(dir, '.download.zZ09yx', 'unpacked', name, 'bin', 'mirador'), 'half a file');
+  const result = await run(b, await pinned(b, { MIRADOR_VERSION: '0.9.0', MIRADOR_SHA256_LINUX_X64: sha }));
+  assert.equal(result.stderr, '');
+  assert.equal(result.code, 0);
+  assert.equal(
+    result.stdout,
+    installed(dir, '0.9.0', 'x64', false, {
+      removed: [
+        `bootstrap.sh: removed ${dir}/.download.Ab3dE9, a download an earlier run left half done`,
+        `bootstrap.sh: removed ${dir}/.download.zZ09yx, a download an earlier run left half done`,
+      ],
+    }),
+  );
+  assert.deepEqual((await readdir(dir)).sort(), ['0.9.0', 'current']);
+  assert.equal(await readlink(join(dir, 'current')), '0.9.0');
+  assert.deepEqual(await lines(b.runLog), [`0.9.0 node ${dir}/current/src/doctor.ts`, '0.9.0 mirador install']);
+});
+
+test('a folder holding anything besides those downloads is left byte-identical, and the refusal stays', async () => {
+  const elsewhere = join(scratch, 'elsewhere');
+  await mkdir(elsewhere, { recursive: true });
+  await writeFile(join(elsewhere, 'keep.txt'), 'mine\n');
+  const cases: [string, (dir: string) => Promise<void>][] = [
+    ['a file of mine beside a download', async (dir) => {
+      await mkdir(join(dir, '.download.Ab3dE9'));
+      await writeFile(join(dir, '.download.Ab3dE9', 'mirador-0.9.0-linux-x64.tar.gz'), 'half a download');
+      await writeFile(join(dir, 'notes.txt'), 'mine\n');
+    }],
+    ['a file named like a download', (dir) => writeFile(join(dir, '.download.Ab3dE9'), 'mine\n')],
+    ['a link named like a download', (dir) => symlink(elsewhere, join(dir, '.download.Ab3dE9'))],
+    ['a folder of another name that starts like one', async (dir) => {
+      await mkdir(join(dir, '.download.mine'));
+      await writeFile(join(dir, '.download.mine', 'keep.txt'), 'mine\n');
+    }],
+    ['an empty folder', async () => {}],
+  ];
+  for (const [what, fill] of cases) {
+    const b = await box();
+    const dir = dataDir(b);
+    await mkdir(dir, { recursive: true });
+    await fill(dir);
+    const before = await snapshot(dir);
+    const result = await run(b, await pinned(b, { MIRADOR_VERSION: '0.9.0', MIRADOR_SHA256_LINUX_X64: 'a'.repeat(64) }));
+    assert.deepEqual([result.code, result.stdout], [1, ''], what);
+    assert.equal(result.stderr, `bootstrap.sh: ${dir} exists and is neither a prebuilt install of Mirador nor a git clone of it; move it away, then run this again\n`, what);
+    assert.deepEqual(await snapshot(dir), before, what);
+    assert.deepEqual(await lines(b.curlLog), [], what);
+  }
+  assert.deepEqual(await readdir(elsewhere), ['keep.txt']);
+});
+
+/** A process whose command line names src/server.ts, as bin/mirador checks, and the launcher's state file naming its pid. */
+async function fakeServer(b: Box): Promise<ChildProcess> {
+  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', 'src/server.ts'], { stdio: 'ignore' });
+  await serverState(b, child.pid!);
+  return child;
+}
+
+/** Writes bin/mirador's state file (no XDG_RUNTIME_DIR in the box: ~/.cache/mirador/state.json) naming `pid`. */
+async function serverState(b: Box, pid: number): Promise<string> {
+  const file = join(b.home, '.cache', 'mirador', 'state.json');
+  await mkdir(join(b.home, '.cache', 'mirador'), { recursive: true });
+  await writeFile(file, JSON.stringify({ pid, port: 4545, launchSecret: 'x' }));
+  return file;
+}
+
+const REAL_LAUNCHER_LINE = 'mirador: installed ~/.local/bin/mirador and the Mirador app menu entry';
+
+test('an update while a Mirador server runs says it keeps running the previous version until mirador stop && mirador', async () => {
+  const b = await box();
+  const one = await release(b, '0.9.0', 'x64', { realLauncher: true });
+  const two = await release(b, '0.9.1', 'x64', { realLauncher: true });
+  const dir = dataDir(b);
+  const first = await pinned(b, { MIRADOR_VERSION: '0.9.0', MIRADOR_SHA256_LINUX_X64: one });
+  assert.equal((await run(b, first)).code, 0);
+  const server = await fakeServer(b);
+  try {
+    const state = await readFile(join(b.home, '.cache', 'mirador', 'state.json'), 'utf8');
+    // Run again on the same version, it is no update: no notice.
+    const again = await run(b, first);
+    assert.deepEqual([again.code, again.stderr], [0, '']);
+    assert.equal(again.stdout, installed(dir, '0.9.0', 'x64', true, { launcher: REAL_LAUNCHER_LINE }));
+
+    const update = await run(b, await pinned(b, { MIRADOR_VERSION: '0.9.1', MIRADOR_SHA256_LINUX_X64: two }));
+    assert.equal(update.stderr, '');
+    assert.equal(update.code, 0);
+    assert.equal(
+      update.stdout,
+      installed(dir, '0.9.1', 'x64', false, {
+        launcher: REAL_LAUNCHER_LINE,
+        notice: ['bootstrap.sh: a Mirador server is running, and it keeps running Mirador 0.9.0 until you restart it with: mirador stop && mirador'],
+      }),
+    );
+    assert.deepEqual((await readdir(dir)).sort(), ['0.9.0', '0.9.1', 'current']);
+    assert.equal(await readlink(join(dir, 'current')), '0.9.1');
+    // The server is left running, and its state file as it was.
+    assert.equal(server.exitCode, null);
+    assert.equal(await readFile(join(b.home, '.cache', 'mirador', 'state.json'), 'utf8'), state);
+  } finally {
+    server.kill('SIGKILL');
+  }
+});
+
+test('an update with no Mirador server running prints no notice, a stale state file included', async () => {
+  for (const stale of [false, true]) {
+    const b = await box();
+    const one = await release(b, '0.9.0', 'x64', { realLauncher: true });
+    const two = await release(b, '0.9.1', 'x64', { realLauncher: true });
+    const dir = dataDir(b);
+    assert.equal((await run(b, await pinned(b, { MIRADOR_VERSION: '0.9.0', MIRADOR_SHA256_LINUX_X64: one }))).code, 0);
+    // A state file left behind, naming a live process that is no Mirador server (this test's own).
+    if (stale) await serverState(b, process.pid);
+    const update = await run(b, await pinned(b, { MIRADOR_VERSION: '0.9.1', MIRADOR_SHA256_LINUX_X64: two }));
+    assert.deepEqual([update.code, update.stderr], [0, ''], String(stale));
+    assert.equal(update.stdout, installed(dir, '0.9.1', 'x64', false, { launcher: REAL_LAUNCHER_LINE }), String(stale));
+    assert.equal(await readlink(join(dir, 'current')), '0.9.1');
+  }
 });
 
 test('the prebuilt install takes no installer options: given one, it stops before downloading', async () => {
