@@ -34,7 +34,7 @@ The server listens on `127.0.0.1` only, and that does not change. To use a Mirad
 
    Use the same port number on both ends. The server accepts only a `Host` header naming its own listener (`127.0.0.1:<port>` or `localhost:<port>`), so a forward to another local port, such as `-L 127.0.0.1:8080:127.0.0.1:4545`, is refused with `421 unexpected host`. When the client runs its own Mirador on `4545`, give the host's Mirador another `port` in its config, such as `4546`, restart it, and forward `127.0.0.1:4546:127.0.0.1:4546`.
 
-2. In a second SSH session on the host, without `-X` or `-Y`, run `mirador`. With no display it starts the server if needed and prints the one-time link, `http://127.0.0.1:4545/#launch=…`. Open that link in the client's browser within 60 seconds. It signs in one browser tab, once; run `mirador` on the host again for a new link. This works on a Linux host. On macOS, and on WSL2 with a Windows browser to open, `mirador` opens its window on the host and prints no link.
+2. In a second SSH session on the host, without `-X` or `-Y`, run `mirador`. With no display it starts the server if needed and prints the one-time link, `http://127.0.0.1:4545/#launch=…`. Open that link in the client's browser within 60 seconds. It signs in one browser tab, once; run `mirador link` on the host for a new link. This works on a Linux host. On macOS, and on WSL2 with a Windows browser to open, `mirador` opens its window on the host and prints no link; `mirador link` prints one there too.
 
 The session token, the `Host` check and the `Origin` check work as on one machine, because the browser still talks to `127.0.0.1`. The token is what keeps other processes out, and the launch secret behind it stays in the host's runtime folder.
 
@@ -45,3 +45,32 @@ Risks:
 - Keep the forward bound to `127.0.0.1` on the client: write the `127.0.0.1:` before the local port, as above. Without it, a client whose SSH config sets `GatewayPorts` listens on every network interface.
 - Never expose the port to a network: no `-g`, no `0.0.0.0` or `*` as the bind address, and no reverse proxy in front of Mirador. The server has no TLS and no login beyond the one-time link, and it was not built to face a network.
 - Close the tunnel when you are done: stop the `ssh -N` with Ctrl+C. Closing the browser window does not end the forward, and the terminals keep running on the host.
+
+### On a phone
+
+The "Te esperan" inbox works in a phone's browser through the same tunnel. The phone needs an SSH client that can forward a local port; the server, its address and its checks stay exactly as above.
+
+1. In the phone's SSH client, forward the same port, bound to `127.0.0.1` on the phone:
+
+   ```sh
+   ssh -N -L 127.0.0.1:4545:127.0.0.1:4545 you@host
+   ```
+
+   In an app that sets up forwards in a form instead of a command line, that is a local forward from `127.0.0.1`, port `4545`, to `127.0.0.1`, port `4545`.
+
+2. On the host, run `mirador link`. It prints only a fresh one-time link, `http://127.0.0.1:4545/#launch=…`, on one line, and opens no window. When Mirador is not running it prints `mirador: not running; start it with mirador first, then run mirador link` and exits 1, starting nothing.
+
+3. Open that link in the phone's browser within 60 seconds. It works once and signs in that one tab; run `mirador link` again for a new one.
+
+The phone gets the same session as any window: the `Host` and `Origin` checks, the 60-second single-use link and the session token apply to it as they do to the desktop, and it has the same full access. Other apps on the phone can connect to the forwarded port while the tunnel is up, but without a session token they get no API call and no terminal socket.
+
+### A lost phone: sign out the other windows
+
+A session lasts until Mirador restarts, or until 32 newer sessions push it out. A lost phone whose tab still holds one keeps that access. To end it from another window:
+
+1. Open **Ajustes / Settings** (the sliders button at the top right).
+2. Under **Otras ventanas / Other windows**, press **Cerrar sesión en las demás ventanas / Sign out the other windows** and confirm.
+
+It clears every session except the one of the window you pressed it in, and says how many it cleared. Every other window and phone gets `401` at its next call, its open terminal sockets close at once, and it needs a new one-time link to come back. The terminals themselves keep running on the host. The action is `DELETE /api/session/others`, behind the same session token, `Host` and `Origin` checks as every other API call.
+
+The fallback, when no signed-in window is at hand, is still **restarting Mirador**: `mirador stop && mirador` on the host. A restart forgets every session, this window's included, and makes a new launch secret, so no earlier link works either. The agents reopen at the next start, as after any stop.

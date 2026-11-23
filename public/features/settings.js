@@ -7,15 +7,18 @@
 // - The "El árbol sigue a la terminal" switch turns the tree reveal on and off; its choice lives in
 //   core.js prefs (`mirador.treeFollows`, tree-reveal-model.js), which public/terminals.js reads.
 // - The "Ayuda" row's "Abrir la guía" opens the help guide (public/features/help.js).
+// - Under the rows, "Otras ventanas" signs out every other window (a lost phone) with
+//   DELETE /api/session/others, after a confirmation, and says how many it signed out.
 // - The night switch and the "Piloto automático" chip follow GET /api/night through
 //   public/features/night.js (its `night` event, plus a light read every NIGHT_POLL_MS while the
 //   window is visible) and switch it with toggleNight(), the strip's former switch.
-import { $, el, getTheme, on, prefs, setTheme, state, t } from '/core.js';
+import { $, api, el, errorText, getTheme, on, prefs, setTheme, state, t } from '/core.js';
+import { confirmDialog } from '/dialog.js';
 import { openGuide } from '/features/help.js';
 import { nightSwitchState, readNightStatus, toggleNight } from '/features/night.js';
 import { icon } from '/icons.js';
 import { showsExtra } from '/mode-model.js';
-import { SETTINGS_ROWS, nightSwitchView, pressedChoices, sheetCloses, treeFollowsSwitchView } from '/settings-model.js';
+import { SETTINGS_ROWS, SIGN_OUT_OTHERS, nightSwitchView, pressedChoices, sheetCloses, signOutResult, treeFollowsSwitchView } from '/settings-model.js';
 import { readTreeFollows, writeTreeFollows } from '/features/tree-reveal-model.js';
 
 const NIGHT_POLL_MS = 30_000;
@@ -27,6 +30,11 @@ let nightWord;
 let nightError;
 let treeFollowsSwitch;
 let treeFollowsWord;
+let signOutButton;
+let signOutLine;
+/** The last sign-out's answer: { cleared } or { error }; null before the first. */
+let signOutAnswer = null;
+let signingOut = false;
 let timer = null;
 
 function choiceButton(row, choice) {
@@ -114,11 +122,54 @@ export function mountSettings() {
         control(row),
       ),
     ),
+    ...signOutParts(),
     nightError,
   );
   renderTheme();
   renderNight();
   renderTreeFollows();
+}
+
+/* ---------- Sign out the other windows ---------- */
+
+/** "Otras ventanas": its row with the button, and the line that says what the last sign-out did. */
+function signOutParts() {
+  const row = { id: 'signOut', ...SIGN_OUT_OTHERS };
+  signOutButton = el(
+    'button',
+    { type: 'button', class: 'btn sm', 'aria-describedby': `settings-${row.id}-hint`, 'data-i18n': row.buttonKey, onclick: () => signOutOthers() },
+    t(row.buttonKey),
+  );
+  signOutLine = el('p', { class: 'settings-result', role: 'status' });
+  return [el('div', { class: 'set-row' }, el('span', { class: 'set-label' }, rowLabel(row)), signOutButton), signOutLine];
+}
+
+/** Asks, then clears every session but this window's; their terminals disconnect (src/server.ts). */
+async function signOutOthers() {
+  if (signingOut) return;
+  const { title, message, confirmLabel, cancelLabel } = SIGN_OUT_OTHERS.confirm;
+  const sure = await confirmDialog({ title: t(title), message: t(message), confirmLabel: t(confirmLabel), cancelLabel: t(cancelLabel), danger: true });
+  if (!sure) return;
+  signingOut = true;
+  signOutButton.setAttribute('aria-busy', 'true');
+  try {
+    const { cleared } = await api('DELETE', '/api/session/others');
+    signOutAnswer = { cleared };
+  } catch (error) {
+    signOutAnswer = { error: errorText(error) };
+  } finally {
+    signingOut = false;
+    signOutButton.removeAttribute('aria-busy');
+  }
+  renderSignOut();
+}
+
+function renderSignOut() {
+  if (!signOutAnswer) return void (signOutLine.textContent = '');
+  signOutLine.classList.toggle('error', 'error' in signOutAnswer);
+  if ('error' in signOutAnswer) return void (signOutLine.textContent = signOutAnswer.error);
+  const { key, vars } = signOutResult(signOutAnswer.cleared);
+  signOutLine.textContent = t(key, vars);
 }
 
 function renderTreeFollows() {
@@ -198,6 +249,7 @@ export async function init() {
   on('night', renderNight);
   on('language', renderNight);
   on('language', renderTreeFollows);
+  on('language', renderSignOut);
   // Plain mode has no night shift (public/mode-model.js): its row hides and GET /api/night is never read.
   if (!showsExtra(state.config, 'night')) {
     nightSwitch.closest('.set-row').hidden = true;
