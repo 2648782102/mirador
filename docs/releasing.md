@@ -72,7 +72,8 @@ releases and attestations.
    git push origin v0.2.0
    ```
 
-   The workflow stops at once if the tag is not `v<major>.<minor>.<patch>` or differs from `package.json`
+   The workflow stops at once if the tag is not `v<major>.<minor>.<patch>`, optionally with a pre-release
+   suffix such as `-rc.1`, or differs from `package.json`
    (`scripts/release/check-tag.sh`). To run it by hand instead, pick the tag under **Use workflow from** and
    give the same tag as input.
 3. When both builds and both smoke checks pass, read the smoke job's summary (sizes and timings), then
@@ -96,6 +97,18 @@ On the draft release (**Releases**), before publishing it:
    `bin/mirador`.
 3. The first release with archives is shown to the owner as a draft, before anyone publishes it.
 4. Publish it: **Edit › Publish release**.
+
+## Release candidates
+
+A release candidate (`0.2.0-rc.1`) goes through the same steps, with three differences:
+
+- When publishing it, tick **Set as a pre-release**, so the releases page keeps the last stable release as
+  **Latest**. The flag stays editable after publishing.
+- With immutable releases on, a published candidate's tag and assets cannot change and its tag name cannot be
+  used again, even after the release is deleted: a fix ships as the next candidate (`-rc.2`).
+- No promotion PR: `scripts/bootstrap.sh` in main never pins a candidate. To try the install end to end, run a
+  local copy of `bootstrap.sh` whose three pin lines carry the candidate's version and sums, in a clean
+  container, as an ordinary user with a scratch home.
 
 ## The promotion PR
 
