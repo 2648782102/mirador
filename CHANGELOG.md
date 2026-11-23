@@ -5,7 +5,10 @@ All notable changes to Mirador, written for the people who run it. The format fo
 
 ## Unreleased
 
-Planned for 0.2.0.
+## [0.2.0-rc.1] - 2026-11-23
+
+Release candidate for 0.2.0, published as a pre-release to rehearse the release and the install from its
+archives before 0.2.0 itself. `scripts/bootstrap.sh` does not pin it.
 
 ### Added
 
@@ -187,4 +190,5 @@ Linux is supported, macOS is experimental, and Windows works through WSL2. Mirad
 - CI scans the git history for secrets with gitleaks.
 - No telemetry and no accounts.
 
+[0.2.0-rc.1]: https://github.com/mata-2p/mirador/releases/tag/v0.2.0-rc.1
 [0.1.0]: https://github.com/mata-2p/mirador/releases/tag/v0.1.0
