@@ -11,12 +11,13 @@
 // left for you), and a card Mirador resolved stays as a short note until it is seen.
 // Phone layout (public/features/phone.js, on its `phone` event): cards read the reason first, a
 // card opens its terminal without the soft keyboard, and the stream's state goes to the header
-// (the `inbox:stream` event).
+// (the `inbox:stream` event). A stream silent for longer than two heartbeats is dropped and
+// reopened, and so is one the page comes back to after a long time hidden (inbox-model.js streamWatch).
 import { api, el, emit, getLanguage, on, prefs, session, slot, t, workspaceById } from '/core.js';
 import { BRAND } from '/mode-model.js';
 import { nightView } from '/i18n/inbox.js';
 import { icon } from '/icons.js';
-import { answers, cardLayout, inboxGroups, waitLabel } from '/features/inbox-model.js';
+import { answers, cardLayout, inboxGroups, streamWatch, waitLabel } from '/features/inbox-model.js';
 import { createInboxNotifier, NOTIFY_PREF, showNotification as showCardNotification } from '/features/inbox-notify.js';
 import { activateTerminal, activeTerminalId, markWaiting, terminalList } from '/terminals.js';
 import { showsActiveTerminal } from '/features/phone-model.js';
@@ -53,6 +54,18 @@ let announced = null;
 let phoneView = null;
 /** The stream's state: 'live' while it reads, 'reconnecting' before the first answer and between tries. */
 let stream = 'reconnecting';
+/** Each try of the stream: aborted when silent past the bound, or on coming back to the page (inbox-model.js). */
+// unref: in Node (the tests run this file) a pending watch does not keep the process alive; a browser's
+// timer id is a number, which has none.
+const watch = streamWatch({
+  now: () => Date.now(),
+  setTimer: (fn, ms) => {
+    const id = setTimeout(fn, ms);
+    id?.unref?.();
+    return id;
+  },
+  clearTimer: (id) => clearTimeout(id),
+});
 const baseTitle = document.title.replace(/^\(\d+\)\s*/, '') || BRAND;
 
 /** A night note with no card behind it has no label: a question, or a note to an agent that had not finished. */
@@ -276,22 +289,29 @@ function setStream(next) {
   emit('inbox:stream', stream);
 }
 
-/** Reads the stream for as long as the window lives; reconnects with backoff, stops on 401. */
+/**
+ * Reads the stream for as long as the window lives; reconnects with backoff, stops on 401. A try
+ * that reads nothing (not even the `{}` heartbeat) for STREAM_SILENCE_MS is aborted, and one the page
+ * comes back to after that long is aborted at once and retried without the backoff (the watch).
+ */
 async function follow() {
   let delay = 1000;
   for (;;) {
     if (!session.token) return;
+    const signal = watch.open();
     try {
-      const response = await fetch('/api/inbox/stream', { headers: { authorization: `Bearer ${session.token}` } });
+      const response = await fetch('/api/inbox/stream', { headers: { authorization: `Bearer ${session.token}` }, signal });
       if (response.status === 401) return session.expire();
       if (!response.ok || !response.body) throw new Error(`inbox stream answered ${response.status}`);
       delay = 1000;
       setStream('live');
+      watch.alive();
       const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
       let buffer = '';
       for (;;) {
         const { value, done } = await reader.read();
         if (done) break;
+        watch.alive();
         buffer += value;
         let end;
         while ((end = buffer.indexOf('\n')) >= 0) {
@@ -317,7 +337,14 @@ async function follow() {
         if (buffer.length > MAX_BUFFER) break;
       }
     } catch {
-      // The server restarted or the network dropped: try again below.
+      // The server restarted, the network dropped or the watch aborted a silent try: try again below.
+    } finally {
+      watch.close();
+    }
+    if (watch.retryNow()) {
+      // Back to the page after a long time away: the old socket was not trusted, so no backoff.
+      setStream('reconnecting');
+      continue;
     }
     setStream('reconnecting');
     await new Promise((resolve) => setTimeout(resolve, delay));
@@ -349,7 +376,11 @@ export async function init() {
     phoneView = view;
     render();
   });
-  document.addEventListener('visibilitychange', render);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') watch.hidden();
+    else watch.visible();
+    render();
+  });
   setInterval(tick, TICK_MS);
   render();
   follow();

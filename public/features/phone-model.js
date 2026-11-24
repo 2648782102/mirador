@@ -51,6 +51,25 @@ export function nextView(view, { action, narrow }) {
 export const showsActiveTerminal = (view) => view !== 'inbox';
 
 /**
+ * The terminal on screen in the phone terminal view, the one its header names and its key bar types
+ * into (#65): the active terminal (`activeId`, terminals.js activeTerminalId, whose pane alone is
+ * `.pane.active`) while it is among `terminals`, whatever activated it (a card, a notification, an
+ * `activate`). null outside the 'terminal' view or with no terminal on screen: the keys do nothing.
+ */
+export function screenTerminal(view, activeId, terminals) {
+  if (view !== 'terminal' || activeId == null) return null;
+  return terminals.some((info) => info.id === activeId) ? activeId : null;
+}
+
+/**
+ * Whether the terminal the phone terminal view was showing, `shownId`, is gone from `terminals`
+ * (closed here or in another window): the view goes back to the inbox ('gone'), even when another
+ * terminal became active in its place, as terminals.js closeTerminal does before it emits
+ * `terminals` (#65, L3). Only an activation while it is still there moves the view to another one.
+ */
+export const shownClosed = (shownId, terminals) => shownId != null && !terminals.some((info) => info.id === shownId);
+
+/**
  * The inbox header's text: the count of cards that need an answer (as "Te esperan (N)" counts) and
  * the stream's state, 'live' while GET /api/inbox/stream reads, anything else "reconnecting".
  * `t` is the translate function.
