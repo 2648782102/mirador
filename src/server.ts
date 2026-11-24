@@ -167,6 +167,8 @@ const MIME: Record<string, string> = {
   '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml',
+  // The browser notifications' icon and badge (public/notify-*.png).
+  '.png': 'image/png',
 };
 
 async function main(): Promise<void> {

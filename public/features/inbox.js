@@ -3,7 +3,9 @@
 // "Needs you" (a guarded command, a question, a choice, any dialog, an error) comes first, as
 // one list with the longest wait on top, in the server's order (inbox-model.js); "Finished,
 // ready for review" (the agent ended its turn) below, by workspace and folder. Browser
-// notifications are opt-in from the button above the list (inbox-notify.js).
+// notifications are opt-in from the button above the list (inbox-notify.js), with two switches
+// beside it: notices that ask stay on screen (on by default) and discreet mode (off by default).
+// New cards are collected for 1.5 s (NOTIFY_WINDOW_MS) before they notify, so a burst groups.
 // The terminal the user is looking at is not listed, and the view says
 // so while nothing waits. Updates arrive on GET /api/inbox/stream (NDJSON over fetch,
 // since EventSource cannot send the session token); see src/http/routes/inbox.ts.
@@ -15,17 +17,20 @@
 // reopened, and so is one the page comes back to after a long time hidden (inbox-model.js streamWatch).
 import { api, el, emit, getLanguage, on, prefs, session, slot, t, workspaceById } from '/core.js';
 import { BRAND } from '/mode-model.js';
+import { plural } from '/i18n.js';
 import { nightView } from '/i18n/inbox.js';
 import { icon } from '/icons.js';
+import { tabAgent } from '/icons/agents.js';
 import { answers, cardLayout, inboxGroups, streamWatch, waitLabel } from '/features/inbox-model.js';
-import { createInboxNotifier, NOTIFY_PREF, showNotification as showCardNotification } from '/features/inbox-notify.js';
+import { createInboxNotifier, NOTIFY_PREF, NOTIFY_WINDOW_MS, showGroupNotification, showNotification as showCardNotification } from '/features/inbox-notify.js';
+import { GUARDED_LABEL, NOTIFY_DISCREET_PREF, NOTIFY_STAY_PREF } from '/features/inbox-notify-model.js';
 import { activateTerminal, activeTerminalId, markWaiting, terminalList } from '/terminals.js';
 import { showsActiveTerminal } from '/features/phone-model.js';
 
 /** gentle-shell's blocker labels, translated; any other label is shown as the agent wrote it. */
 // Tracking: exported so the tracking view words blockers the same way.
 export const REASONS = {
-  'Guarded command confirmation': 'inbox.reason.guarded',
+  [GUARDED_LABEL]: 'inbox.reason.guarded',
   'Questionnaire awaiting input': 'inbox.reason.questionnaire',
   'Choice awaiting input': 'inbox.reason.choice',
   'Awaiting input': 'inbox.reason.input',
@@ -42,7 +47,13 @@ let cards;
 let notifyBar;
 let notifyButton;
 let notifyStatus;
+/** The two switches beside the button: notices that ask stay on screen, and discreet mode. */
+let notifyOptions;
+let staySwitch;
+let discreetSwitch;
 let notifier;
+/** The agents Mirador offers (GET /api/agents, read once), to name a card's agent in its notification. */
+let offeredAgents = [];
 /** A permission prompt is open (the button waits for the browser's answer). */
 let asking = false;
 let items = [];
@@ -54,18 +65,20 @@ let announced = null;
 let phoneView = null;
 /** The stream's state: 'live' while it reads, 'reconnecting' before the first answer and between tries. */
 let stream = 'reconnecting';
-/** Each try of the stream: aborted when silent past the bound, or on coming back to the page (inbox-model.js). */
-// unref: in Node (the tests run this file) a pending watch does not keep the process alive; a browser's
-// timer id is a number, which has none.
-const watch = streamWatch({
-  now: () => Date.now(),
+/**
+ * The timers of the stream's watch and of the notifications' window. unref: in Node (the tests run
+ * this file) a pending timer does not keep the process alive; a browser's timer id is a number, which has none.
+ */
+const timers = {
   setTimer: (fn, ms) => {
     const id = setTimeout(fn, ms);
     id?.unref?.();
     return id;
   },
   clearTimer: (id) => clearTimeout(id),
-});
+};
+/** Each try of the stream: aborted when silent past the bound, or on coming back to the page (inbox-model.js). */
+const watch = streamWatch({ now: () => Date.now(), ...timers });
 /** Ends follow()'s pending backoff wait at once; null when it is not waiting. */
 let wake = null;
 const baseTitle = document.title.replace(/^\(\d+\)\s*/, '') || BRAND;
@@ -218,6 +231,12 @@ function renderNotify(refocus = false) {
   notifyButton.textContent = t(status === 'on' ? 'inbox.notify.turnOff' : 'inbox.notify.turnOn');
   notifyStatus.textContent = t(asking ? 'inbox.notify.asking' : `inbox.notify.status.${status}`);
   notifyStatus.className = `inbox-notify-status ${status}`;
+  notifyOptions.hidden = !usable;
+  notifyOptions.setAttribute('aria-label', t('inbox.notify.options'));
+  staySwitch.box.checked = prefs.read(NOTIFY_STAY_PREF, true) !== false;
+  discreetSwitch.box.checked = prefs.read(NOTIFY_DISCREET_PREF, false) === true;
+  staySwitch.text.textContent = t('inbox.notify.stay');
+  discreetSwitch.text.textContent = t('inbox.notify.discreet');
   // The keyboard stays on the button while it shows; a refusal hides it, so the keyboard goes to the
   // text that says why.
   if (hadFocus) (usable ? notifyButton : notifyStatus).focus({ preventScroll: true });
@@ -240,6 +259,45 @@ async function toggleNotify() {
   }
 }
 
+/** One switch beside the notification button: a checkbox stored under `key`, its text and the label holding both. */
+function notifySwitch(key) {
+  const box = el('input', { type: 'checkbox', onchange: () => prefs.write(key, box.checked) });
+  const text = el('span', {});
+  return { box, text, label: el('label', { class: 'inbox-notify-option' }, box, text) };
+}
+
+/** What every notification needs besides its card (inbox-notify-model.js): the language and the two switches. */
+function notifyWords() {
+  const lang = getLanguage();
+  return {
+    lang,
+    stay: prefs.read(NOTIFY_STAY_PREF, true) !== false,
+    discreet: prefs.read(NOTIFY_DISCREET_PREF, false) === true,
+    waiting: (count) => plural(lang, 'inbox.notify.waiting', count),
+  };
+}
+
+/** The card's agent as its tab names it (icons/agents.js tabAgent), or null when this window does not have its terminal. */
+function agentName(item) {
+  const info = terminalList().find((terminal) => terminal.id === item.terminalId);
+  const configured = offeredAgents.find((agent) => agent?.configured)?.label ?? null;
+  return (info && tabAgent(info, offeredAgents, configured)?.label) || null;
+}
+
+/**
+ * Shows the inbox, as its own controls do: the phone's "waiting for you" button, or the panel
+ * (opened first when hidden) and its "Te esperan" view (features/summary.js).
+ */
+function openInbox() {
+  if (phoneView) {
+    document.getElementById('phone-to-inbox')?.click();
+    return;
+  }
+  const showPanel = document.querySelector('.side-show[data-side="panel"]');
+  if (showPanel && showPanel.offsetParent !== null) showPanel.click();
+  document.querySelector('[data-slot="panel-views"] [data-view="inbox"]')?.click();
+}
+
 /**
  * One browser notification for a card that started waiting, or null when the browser refused it;
  * the notifier closes it when the card leaves. Clicking it brings this window forward and selects
@@ -247,7 +305,7 @@ async function toggleNotify() {
  */
 function showNotification(item) {
   try {
-    return showCardNotification(Notification, item, { reason: reason(item), where: `${workspaceName(item)} › ${place(item)}` }, {
+    return showCardNotification(Notification, item, { reason: reason(item), workspace: workspaceName(item), agent: agentName(item), ...notifyWords() }, {
       focus: () => window.focus(),
       open: ({ terminalId }) => {
         if (terminalList().some((info) => info.id === terminalId)) activateTerminal(terminalId);
@@ -255,6 +313,16 @@ function showNotification(item) {
     });
   } catch {
     // Some browsers only notify from a service worker: the control then says it is not available.
+    return null;
+  }
+}
+
+/** One notification for a burst of new cards (inbox-notify.js showGroupNotification); its click opens the inbox. */
+function showGroup(list) {
+  try {
+    const entries = list.map((item) => ({ item, workspace: workspaceName(item) }));
+    return showGroupNotification(Notification, entries, notifyWords(), { focus: () => window.focus(), openInbox });
+  } catch {
     return null;
   }
 }
@@ -331,10 +399,8 @@ async function follow() {
             notes = Array.isArray(message.nightNotes) ? message.nightNotes : [];
             render();
             announce();
-            // Only stream messages notify; a re-render or a reconnect's same snapshot never does.
-            const before = notifier.status();
+            // Only stream messages notify (after the window); a re-render or a reconnect's same snapshot never does.
             notifier.receive(items, inView);
-            if (notifier.status() !== before) renderNotify();
           }
         }
         if (buffer.length > MAX_BUFFER) break;
@@ -372,11 +438,22 @@ export async function init() {
     read: () => prefs.read(NOTIFY_PREF, false),
     write: (value) => prefs.write(NOTIFY_PREF, value),
     show: showNotification,
+    showGroup,
+    // The window ends with what the user is looking at then; a browser that refuses changes the control.
+    windowMs: NOTIFY_WINDOW_MS,
+    ...timers,
+    onRefused: () => renderNotify(),
   });
+  api('GET', '/api/agents')
+    .then((answer) => { offeredAgents = Array.isArray(answer?.agents) ? answer.agents : []; })
+    .catch(() => {});
   notifyStatus = el('span', { class: 'inbox-notify-status', id: 'inbox-notify-status', role: 'status', tabindex: '-1' });
   notifyButton = el('button', { type: 'button', class: 'btn inbox-notify-toggle', 'aria-describedby': 'inbox-notify-status', onclick: toggleNotify });
   cards = el('div', { class: 'inbox-cards' });
-  notifyBar = el('div', { class: 'inbox-notify', role: 'group' }, notifyButton, notifyStatus);
+  staySwitch = notifySwitch(NOTIFY_STAY_PREF);
+  discreetSwitch = notifySwitch(NOTIFY_DISCREET_PREF);
+  notifyOptions = el('div', { class: 'inbox-notify-options', role: 'group' }, staySwitch.label, discreetSwitch.label);
+  notifyBar = el('div', { class: 'inbox-notify', role: 'group' }, notifyButton, notifyStatus, notifyOptions);
   host.replaceChildren(notifyBar, cards);
   on('terminals', render);
   on('workspaces', render);
