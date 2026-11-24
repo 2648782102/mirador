@@ -2,6 +2,7 @@
 // fake Notification API stands in for the browser's.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createInboxNotifier, episodeKey, NOTIFY_PREF, notificationFor, showNotification } from '../public/features/inbox-notify.js';
 
 const item = (terminalId: string, kind: string, since: string, extra: Record<string, unknown> = {}) => ({ terminalId, workspaceId: 'dev', rel: 'api', title: 'api', kind, label: 'Awaiting input', detail: null, since, activity: null, ...extra });
@@ -130,8 +131,22 @@ test('a stored "on" with the permission reset to default reads as off until clic
 
 test('the notification says what the inbox card says, tagged by its episode', () => {
   const shown = notificationFor(item('t1', 'error', T0, { detail: 'Build failed' }), { reason: 'Stopped with an error', where: 'dev › api' });
-  assert.deepEqual(shown, { title: 'Stopped with an error', options: { body: 'dev › api\nBuild failed', tag: `mirador-inbox:t1:${T0}`, requireInteraction: false } });
+  assert.deepEqual(shown, { title: 'Stopped with an error', options: { body: 'dev › api\nBuild failed', tag: `mirador-inbox:t1:${T0}`, requireInteraction: false, icon: '/notify-icon.png', badge: '/notify-badge.png' } });
   assert.equal(notificationFor(item('t2', 'blocked', T1), { reason: 'Waiting for your answer', where: 'dev › api' }).options.body, 'dev › api');
+});
+
+/** A PNG's width and height, from its IHDR chunk, or null for anything else. */
+function pngSize(path: string) {
+  const bytes = readFileSync(new URL(path, import.meta.url));
+  if (bytes.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') return null;
+  return [bytes.readUInt32BE(16), bytes.readUInt32BE(20)];
+}
+
+test('the icon and the badge are PNGs of the mark under public/, served by Mirador itself', () => {
+  const options: Record<string, unknown> = notificationFor(item('t1', 'blocked', T0), { reason: 'r', where: 'w' }).options;
+  assert.deepEqual([options.icon, options.badge], ['/notify-icon.png', '/notify-badge.png'], 'same-origin paths, never another host');
+  assert.deepEqual(pngSize('../public/notify-icon.png'), [192, 192]);
+  assert.deepEqual(pngSize('../public/notify-badge.png'), [96, 96]);
 });
 
 // A card is a terminal's stay

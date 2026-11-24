@@ -21,6 +21,14 @@ export const NOTIFY_PREF = 'inboxNotify';
 /** One waiting episode: the terminal and when it started waiting (tests key what they saw by it; cards are keyed by terminal). */
 export const episodeKey = (item) => `${item.terminalId}\u0000${item.since}`;
 
+/**
+ * The Mirador mark at 192 px and its white-on-transparent badge at 96 px (Android's status bar),
+ * served by Mirador itself (scripts/notify-icons.sh makes both from public/icon.svg). PNG, not the
+ * SVG: Firefox on Linux shows no image for an SVG icon.
+ */
+const ICON = '/notify-icon.png';
+const BADGE = '/notify-badge.png';
+
 /** One card: the terminal's stay in the inbox with a blocker, a dialog or an error, whatever its since. */
 const cardKey = (item) => item.terminalId;
 
@@ -120,7 +128,7 @@ export function createInboxNotifier({ api, read, write, show }) {
 export function notificationFor(item, { reason, where }) {
   return {
     title: reason,
-    options: { body: item.detail ? `${where}\n${item.detail}` : where, tag: `mirador-inbox:${item.terminalId}:${item.since}`, requireInteraction: false },
+    options: { body: item.detail ? `${where}\n${item.detail}` : where, tag: `mirador-inbox:${item.terminalId}:${item.since}`, requireInteraction: false, icon: ICON, badge: BADGE },
   };
 }
 
