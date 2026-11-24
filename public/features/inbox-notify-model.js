@@ -3,8 +3,9 @@
 // - One card: "{project} · {reason}"; the body is the question or detail (when there is one),
 //   then "{agent} · {workspace › folder › …}". The project is the folder's last part, or the
 //   workspace at its root.
-// - A guarded command (GUARDED_LABEL): only "{project} · {reason}", with an empty body. The command
-//   may carry a token, and the desktop's notification history keeps a notice after the card closes.
+// - A blocked card: only "{project} · {reason}", with an empty body, unless its label is a known
+//   question (QUESTION_LABELS). A guarded command may carry a token, the desktop's notification
+//   history keeps a notice after the card closes, and an unknown or changed label must not show it.
 // - A burst (GROUP_AT or more new cards within the page's window, inbox-notify.js NOTIFY_WINDOW_MS):
 //   "{n} agents are waiting for you", the projects in the body, under one tag, so a later burst replaces it.
 // - Discreet mode: "An agent is waiting for you" (or the burst title), with no project, question
@@ -31,6 +32,11 @@ export const GROUP_AT = 3;
 export const GROUP_TAG = 'mirador-inbox:group';
 /** gentle-shell's blocker label for a guarded command (inbox.js REASONS): its notice never shows the command. */
 export const GUARDED_LABEL = 'Guarded command confirmation';
+/** gentle-shell's blocker labels that ask a question (matched trimmed, in any case): the only blocked cards whose notice shows the detail. */
+export const QUESTION_LABELS = Object.freeze(['Questionnaire awaiting input', 'Choice awaiting input']);
+const QUESTIONS = new Set(QUESTION_LABELS.map((label) => label.toLowerCase()));
+/** A blocked card shows its detail only when its label is a known question; any other label fails closed. */
+const hidesDetail = (item) => item.kind === 'blocked' && !QUESTIONS.has(String(item.label ?? '').trim().toLowerCase());
 /** The longest line of agent text a notification shows. */
 const TEXT_MAX = 120;
 
@@ -80,7 +86,7 @@ export function cardNotification(item, text) {
   const requireInteraction = text.stay !== false && asksYou(item);
   if (text.discreet) return { title: waitingTitle(text, 1), options: { body: '', tag, requireInteraction, ...common(text, item.since) } };
   const title = `${projectOf(item, text.workspace)} · ${agentText(text.reason)}`;
-  if (item.label === GUARDED_LABEL) return { title, options: { body: '', tag, requireInteraction, ...common(text, item.since) } };
+  if (hidesDetail(item)) return { title, options: { body: '', tag, requireInteraction, ...common(text, item.since) } };
   const agent = agentText(text.agent);
   const where = pathOf(item, text.workspace);
   const lines = [agentText(item.detail), agent ? `${agent} · ${where}` : where].filter(Boolean);

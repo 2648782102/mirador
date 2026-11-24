@@ -19,7 +19,8 @@
 // 1.5 s) the page collects the new cards from the first of them until the window ends, then
 // notifies, each card as it is by then (tagged by its start): fewer than GROUP_AT one by one,
 // GROUP_AT (3) or more as one burst notification, closed when the last of them leaves. A burst
-// replaces the last one's notification, so it also covers that burst's cards that still wait. A
+// replaces the last one's notification, so it also covers that burst's cards that still wait and
+// that the user is not on. A
 // card that leaves inside the window, or that the user opens (or looked at when it arrived), is
 // never notified; notifications turned off or blocked by then show nothing. Without `windowMs`
 // each message notifies at once. What each says is inbox-notify-model.js.
@@ -126,7 +127,8 @@ export function createInboxNotifier({
   /** Shows `due` (new cards nobody is looking at): one burst notification, or one each; → the ones shown. */
   const notify = (due) => {
     if (showGroup && due.length >= GROUP_AT) {
-      const all = [...burst.values(), ...due];
+      // The earlier burst's cards it covers, but not one the user is on now.
+      const all = [...[...burst.values()].filter((item) => !skipping(item)), ...due];
       const notice = showGroup(all);
       if (!notice) return refused([]);
       // The browser replaced the last burst's notification: closing it now could close this one.

@@ -135,7 +135,7 @@ test('the notification says who waits (inbox-notify-model.js), tagged by its epi
     title: 'api · Stopped with an error',
     options: { body: 'Build failed\nClaude Code · dev › api', tag: `mirador-inbox:t1:${T0}`, requireInteraction: false, icon: '/notify-icon.png', badge: '/notify-badge.png', lang: 'en', timestamp: Date.parse(T0) },
   });
-  const blocked = notificationFor(item('t2', 'blocked', T1), { reason: 'Waiting for your answer', workspace: 'dev' });
+  const blocked = notificationFor(item('t2', 'blocked', T1, { label: 'Choice awaiting input' }), { reason: 'Waiting for your answer', workspace: 'dev' });
   assert.deepEqual([blocked.title, blocked.options.body, blocked.options.requireInteraction], ['api · Waiting for your answer', 'dev › api', true]);
 });
 
@@ -517,8 +517,8 @@ const realWindowed = () => windowed({
 test('the window: a card shows as it is when the window ends, tagged by its start; the same snapshot does not queue it again', () => {
   const { notifier, tick } = realWindowed();
   notifier.receive([item('t1', 'error', T0, { label: 'Error', detail: 'Build failed' })]);
-  notifier.receive([item('t1', 'blocked', T1, { detail: 'Deploy to production?' })]);
-  notifier.receive([item('t1', 'blocked', T1, { detail: 'Deploy to production?' })]);
+  notifier.receive([item('t1', 'blocked', T1, { label: 'Choice awaiting input', detail: 'Deploy to production?' })]);
+  notifier.receive([item('t1', 'blocked', T1, { label: 'Choice awaiting input', detail: 'Deploy to production?' })]);
   tick();
   assert.deepEqual(FakeNotification.made.map((n) => [n.title, n.options.body, n.options.requireInteraction, n.options.tag]), [
     ['api · Waiting for your answer', 'Deploy to production?\ndev › api', true, `mirador-inbox:t1:${T0}`],
@@ -551,6 +551,48 @@ test('a later burst keeps the earlier burst\'s waiting cards: it covers them, st
   assert.equal(second.closed, 0);
   notifier.receive([]);
   assert.deepEqual([first.closed, second.closed], [0, 1], 'closed once, with the last card; the replaced one is left alone');
+});
+
+/** A card in its own folder, so a burst's body (its projects) names it. */
+const own = (id: string, kind: string, since = T0) => item(id, kind, since, { rel: id });
+
+test('a later burst leaves out the earlier burst\'s cards the user is on: not counted, not named, not closing it', () => {
+  const { notifier, groups, tick } = realWindowed();
+  const [b1, b2, b3] = ['t1', 't2', 't3'].map((id) => own(id, 'blocked'));
+  notifier.receive([b1, b2, b3]);
+  tick();
+  const errors = ['t4', 't5', 't6'].map((id) => own(id, 'error', T1));
+  notifier.receive([b1, b2, b3, ...errors], (i: any) => i.terminalId === 't2'); // the user is on t2
+  tick();
+  const second = FakeNotification.made[1];
+  assert.deepEqual(groups[1], ['t1', 't3', 't4', 't5', 't6']);
+  assert.deepEqual([second.title, second.options.body, second.options.requireInteraction], ['5 agents are waiting for you', 't1, t3, t4, t5, t6', true]);
+  notifier.receive([b2]);
+  assert.equal(second.closed, 1, 'every card it covers left; t2 does not keep it open');
+});
+
+test('a later burst whose covered cards left after the skip are all errors does not stay on screen', () => {
+  const { notifier, tick } = realWindowed();
+  const first = [own('t1', 'blocked'), own('t2', 'error'), own('t3', 'error')];
+  notifier.receive(first);
+  tick();
+  notifier.receive([...first, ...['t4', 't5', 't6'].map((id) => own(id, 'error', T1))], (i: any) => i.terminalId === 't1');
+  tick();
+  const second = FakeNotification.made[1];
+  assert.deepEqual([second.title, second.options.requireInteraction], ['5 agents are waiting for you', false], 'the blocked t1 is in view');
+});
+
+test('a covered card follows its current state: blocked then an error, a later error burst does not stay on screen', () => {
+  const { notifier, groups, tick } = realWindowed();
+  const [t2, t3] = [own('t2', 'error'), own('t3', 'error')];
+  notifier.receive([own('t1', 'blocked'), t2, t3]);
+  tick();
+  notifier.receive([own('t1', 'error', T1), t2, t3]); // t1 stopped with an error: the same card
+  notifier.receive([own('t1', 'error', T1), t2, t3, ...['t4', 't5', 't6'].map((id) => own(id, 'error', T1))]);
+  tick();
+  const second = FakeNotification.made[1];
+  assert.deepEqual(groups[1], ['t1', 't2', 't3', 't4', 't5', 't6']);
+  assert.deepEqual([second.title, second.options.requireInteraction], ['6 agents are waiting for you', false]);
 });
 
 test('the window: notifications turned off inside it show nothing, and what it held never notifies later', async () => {

@@ -23,7 +23,7 @@ Which database should the migration use?
 Claude Code · Dev › web › mi-proyecto
 ```
 
-A guarded command's notification shows only the project and the reason (`mi-proyecto · {reason}`) with an empty body: never the command, its detail, the agent or the path, because a command can carry a token.
+A notification for a blocked agent shows only the project and the reason (`mi-proyecto · {reason}`) with an empty body, unless the agent asks a questionnaire or a choice: never a command, its detail, the agent or the path, because a command can carry a token.
 
 Text from the agent or the disk shows as one line: line breaks and control characters become spaces, invisible format characters (zero-width marks, bidirectional marks, the soft hyphen, tag characters) are dropped, except the zero-width joiner that builds emoji, and it is cut to 120 characters with `…`. Each notification also carries the interface language (`lang`) and the time the wait started (`timestamp`).
 

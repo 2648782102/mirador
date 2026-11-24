@@ -3,11 +3,11 @@
 // Pure: no DOM, no Notification class.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { agentText, asksYou, cardNotification, GROUP_AT, GROUP_TAG, GUARDED_LABEL, groupNotification, NOTIFY_DISCREET_PREF, NOTIFY_STAY_PREF } from '../public/features/inbox-notify-model.js';
+import { agentText, asksYou, cardNotification, GROUP_AT, GROUP_TAG, GUARDED_LABEL, groupNotification, NOTIFY_DISCREET_PREF, NOTIFY_STAY_PREF, QUESTION_LABELS } from '../public/features/inbox-notify-model.js';
 
 const T0 = '2026-10-28T10:00:00.000Z';
 const T1 = '2026-10-28T10:05:00.000Z';
-const item = (terminalId: string, kind: string, extra: Record<string, unknown> = {}) => ({ terminalId, workspaceId: 'dev', rel: 'web/mi-proyecto', title: 'mi-proyecto', kind, label: 'Awaiting input', detail: null, since: T0, activity: null, ...extra });
+const item = (terminalId: string, kind: string, extra: Record<string, unknown> = {}) => ({ terminalId, workspaceId: 'dev', rel: 'web/mi-proyecto', title: 'mi-proyecto', kind, label: 'Choice awaiting input', detail: null, since: T0, activity: null, ...extra });
 const waiting = (count: number) => (count === 1 ? 'An agent is waiting for you' : `${count} agents are waiting for you`);
 const text = (extra: Record<string, unknown> = {}) => ({ reason: 'Needs you to choose', workspace: 'Dev', agent: 'Claude Code', lang: 'en', waiting, ...extra });
 const IMAGES = { icon: '/notify-icon.png', badge: '/notify-badge.png' };
@@ -28,18 +28,30 @@ test('each kind of card: "{project} · {reason}", the question then "{agent} · 
   assert.deepEqual(['blocked', 'prompt', 'error', 'finished'].map((kind) => asksYou(item('t', kind))), [true, true, false, false]);
 });
 
-test('a guarded command: only "{project} · {reason}", never the command (it may carry a token); same tag and options', () => {
+test('a blocked card shows only "{project} · {reason}" (its command may carry a token), whatever its label; same tag and options', () => {
   assert.equal(GUARDED_LABEL, 'Guarded command confirmation');
-  const guarded = item('t1', 'blocked', { label: GUARDED_LABEL, detail: 'TOKEN=abc123 deploy' });
-  const shown = cardNotification(guarded, text({ reason: 'Confirm a guarded command' }));
-  assert.deepEqual(shown, {
-    title: 'mi-proyecto · Confirm a guarded command',
-    options: { body: '', tag: `mirador-inbox:t1:${T0}`, requireInteraction: true, ...IMAGES, lang: 'en', timestamp: Date.parse(T0) },
-  });
-  assert.doesNotMatch(JSON.stringify(shown), /abc123|deploy|Claude|Dev ›/);
-  assert.equal(cardNotification(guarded, text({ discreet: true })).title, 'An agent is waiting for you', 'discreet mode unchanged');
-  const questionnaire = item('t2', 'blocked', { label: 'Questionnaire awaiting input', detail: 'Which database should I use?' });
-  assert.equal(cardNotification(questionnaire, text()).options.body, 'Which database should I use?\nClaude Code · Dev › web › mi-proyecto');
+  for (const label of [GUARDED_LABEL, ' guarded command CONFIRMATION ', 'Guarded command confirmation v2', 'Awaiting input', 'Run shell', '', undefined]) {
+    const blocked = item('t1', 'blocked', { label, detail: 'TOKEN=abc123 deploy' });
+    const shown = cardNotification(blocked, text({ reason: 'Confirm a guarded command' }));
+    assert.deepEqual(shown, {
+      title: 'mi-proyecto · Confirm a guarded command',
+      options: { body: '', tag: `mirador-inbox:t1:${T0}`, requireInteraction: true, ...IMAGES, lang: 'en', timestamp: Date.parse(T0) },
+    }, String(label));
+    assert.doesNotMatch(JSON.stringify(shown), /abc123|deploy|Claude|Dev ›/, String(label));
+    assert.equal(cardNotification(blocked, text({ discreet: true })).title, 'An agent is waiting for you', 'discreet mode unchanged');
+  }
+});
+
+test('a blocked questionnaire or choice still shows its question, its label matched trimmed and in any case; other kinds are unchanged', () => {
+  assert.deepEqual(QUESTION_LABELS, ['Questionnaire awaiting input', 'Choice awaiting input']);
+  for (const label of ['questionnaire awaiting input ', 'Choice awaiting input', ' CHOICE AWAITING INPUT']) {
+    const question = item('t2', 'blocked', { label, detail: 'Which database should I use?' });
+    assert.equal(cardNotification(question, text()).options.body, 'Which database should I use?\nClaude Code · Dev › web › mi-proyecto', label);
+  }
+  for (const kind of ['prompt', 'error']) {
+    const other = item('t3', kind, { label: 'Run shell', detail: 'Pick a model' });
+    assert.equal(cardNotification(other, text()).options.body, 'Pick a model\nClaude Code · Dev › web › mi-proyecto', kind);
+  }
 });
 
 test('at the workspace root the project is the workspace; without an agent the second line is only the path', () => {
