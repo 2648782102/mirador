@@ -14,6 +14,8 @@ All notable changes to Mirador, written for the people who run it. The format fo
 
 ### Fixed
 
+- A terminal closed in another window now leaves every open window: its tab goes away, and a phone that shows it goes back to the inbox. The same happens when an agent goes to sleep, and then a short line says so for a few seconds, with Despertar (Wake) to open it again; on the phone it shows above the inbox. Before, the tab stayed on a dead terminal until a reload (#65).
+- Coming back to the tab after 60 s or more hidden while the inbox waits to reconnect now reconnects at once, as described in [Attention and tracking](docs/attention.md), instead of waiting out the backoff of up to 30 s; a shorter hide keeps the wait (#66).
 - On a phone, the key bar and the header follow the terminal on screen: another terminal activated while the view is open takes the keys, and closing the terminal on screen goes back to the inbox instead of typing into another one (#65).
 - The phone inbox no longer says **En vivo / Live** over a dead connection: after 60 s with no line from the server (it sends one every 25 s) the header shows **Reconectando… / Reconnecting…** and the stream reconnects, and a tab that comes back after 60 s or more hidden reconnects at once (#66).
 

@@ -159,7 +159,8 @@ export class IdleSleep {
     agent.saving = null;
     if (attention.idleHold(id) !== null || !openAgents.sleep(id)) return this.arm(id, agent);
     const info = registry.get(id);
-    registry.close(id);
+    // 'sleep': the windows showing it say it went to sleep (src/server.ts {t:'c', reason:'sleep'}).
+    registry.close(id, 'sleep');
     const hours = Math.round((this.options.idleMs / 3_600_000) * 10) / 10;
     this.log(`mirador: the open agent of workspace ${JSON.stringify(info?.workspaceId)} folder ${JSON.stringify(info?.rel)} sleeps: its turn had been finished for ${hours} h and it saved its session; it reopens when woken in Mirador`);
   }

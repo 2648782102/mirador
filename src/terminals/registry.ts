@@ -69,6 +69,8 @@ export type EnvProvider = (info: TerminalInfo) => Record<string, string>;
 export interface TerminalEvent {
   type: 'created' | 'exited' | 'closed';
   info: TerminalInfo;
+  /** Only on 'closed', and only when the close had one: 'sleep' is idle sleep (src/terminals/hibernate.ts). */
+  reason?: 'sleep';
 }
 
 export interface TerminalListener {
@@ -482,10 +484,10 @@ export class TerminalRegistry {
    * Closes terminal `id` (× in a tab): hangs up its process and forgets it. With scopes, also
    * stops its scope, running or exited, without waiting for the stop: a hung-up agent that
    * outlives the hangup (pi shuts down gracefully on SIGHUP) or a child it left behind would
-   * otherwise keep running, untracked.
+   * otherwise keep running, untracked. `reason` ('sleep': idle sleep) goes with the 'closed' event.
    */
-  close(id: string): void {
-    const terminal = this.forget(id);
+  close(id: string, reason?: 'sleep'): void {
+    const terminal = this.forget(id, reason);
     const { stopScopes } = this.options;
     if (!this.options.scopes || !stopScopes) return;
     const stop = stopScopes([scopeUnit(terminal.info.kind, terminal.info.id)]).catch(() => undefined);
@@ -506,18 +508,18 @@ export class TerminalRegistry {
     await Promise.all(pending);
   }
 
-  private forget(id: string): Terminal {
+  private forget(id: string, reason?: 'sleep'): Terminal {
     const terminal = this.require(id);
     this.terminals.delete(id);
     if (terminal.info.status === 'running') terminal.pty.kill();
-    this.notify('closed', terminal.info);
+    this.notify('closed', terminal.info, reason);
     return terminal;
   }
 
-  private notify(type: TerminalEvent['type'], info: TerminalInfo): void {
+  private notify(type: TerminalEvent['type'], info: TerminalInfo, reason?: 'sleep'): void {
     for (const listener of this.subscribers) {
       try {
-        listener({ type, info: { ...info } });
+        listener({ type, info: { ...info }, ...(reason ? { reason } : {}) });
       } catch (error) {
         console.error(`terminal ${type} listener failed:`, error);
       }

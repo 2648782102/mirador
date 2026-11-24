@@ -107,7 +107,7 @@ test('wide layout unchanged: outside its two @media blocks phone.css only hides 
 test('S3: the inbox reports its stream: "live" once it answers, "reconnecting" before each retry', () => {
   const follow = inboxJs.slice(inboxJs.indexOf('async function follow()'), inboxJs.indexOf('\n}\n', inboxJs.indexOf('async function follow()')));
   assert.match(follow, /delay = 1000;\n\s*setStream\('live'\);/);
-  assert.match(follow, /setStream\('reconnecting'\);\n\s*await new Promise\(\(resolve\) => setTimeout\(resolve, delay\)\);/);
+  assert.match(follow, /setStream\('reconnecting'\);\n\s*await new Promise\(\(resolve\) => \{\n\s*const id = setTimeout\(resolve, delay\);/);
   assert.match(inboxJs, /emit\('inbox:stream', stream\)/);
   assert.match(phoneJs, /on\('inbox:stream', /);
 });
