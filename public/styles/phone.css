@@ -43,6 +43,8 @@
      under its sticky header. */
   body[data-phone="inbox"] > .topbar { display: none; }
   body[data-phone="inbox"] > .launch-slot { display: none; }
+  /* Seguimiento hides #layout ([hidden]), which the rule below shows again: its view goes too, or it stays under the inbox. */
+  body[data-phone="inbox"] > .app-view { display: none; }
   body[data-phone="inbox"] #layout { display: flex; flex-direction: column; padding: 0; }
   body[data-phone="inbox"] #layout > .sidebar { display: none; }
   body[data-phone="inbox"] #layout > .workspace { display: none; }
@@ -68,6 +70,7 @@
   /* The terminal view: the terminal a card opened, under its back control and over the key bar. */
   body[data-phone="terminal"] > .topbar { display: none; }
   body[data-phone="terminal"] > .launch-slot { display: none; }
+  body[data-phone="terminal"] > .app-view { display: none; }
   body[data-phone="terminal"] #layout { display: flex; flex-direction: column; padding: 0; }
   body[data-phone="terminal"] #layout > .sidebar { display: none; }
   body[data-phone="terminal"] #layout > .panel { display: none; }

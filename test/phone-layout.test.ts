@@ -133,3 +133,13 @@ test('S2, S9: the phone feature starts after the drawers, and every view switch 
   for (const action of ['start', 'resize', 'back', 'inbox', 'full', 'open', 'gone']) assert.match(phoneJs, new RegExp(`go\\('${action}'`), action);
   assert.match(phoneJs, /matchMedia\(PHONE_QUERY\)/, 'the same width as the stylesheet');
 });
+
+test('the inbox and terminal views cover Seguimiento: its view is hidden behind them, and the deck keeps it', () => {
+  // Seguimiento hides main#layout ([hidden]) and shows section.app-view; the phone views show #layout
+  // again (display: flex), so the tracking view must go or it stays under the inbox (#67).
+  assert.match(page, /<section class="app-view" data-slot="tracking"/);
+  for (const view of ['inbox', 'terminal']) {
+    assert.equal(declared(narrow, `body[data-phone="${view}"] > .app-view`).display, 'none', view);
+  }
+  assert.ok(!rules(narrow).some(([selectors]) => selectors.some((s) => s.includes('"deck"') && s.includes('app-view'))), 'the deck shows Seguimiento as before');
+});
