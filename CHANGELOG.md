@@ -11,6 +11,11 @@ All notable changes to Mirador, written for the people who run it. The format fo
 - `mirador link` prints a fresh one-time link for a phone or another machine, without trying to open a window (#41).
 - **Cerrar sesión en las demás ventanas / Sign out the other windows** under **Ajustes / Settings** signs out every other window and closes its terminals, for a lost phone (#41).
 
+### Fixed
+
+- On a phone, the key bar and the header follow the terminal on screen: another terminal activated while the view is open takes the keys, and closing the terminal on screen goes back to the inbox instead of typing into another one (#65).
+- The phone inbox no longer says **En vivo / Live** over a dead connection: after 60 s with no line from the server (it sends one every 25 s) the header shows **Reconectando… / Reconnecting…** and the stream reconnects, and a tab that comes back after 60 s or more hidden reconnects at once (#66).
+
 ## [0.2.0-rc.1] - 2026-11-23
 
 Release candidate for 0.2.0, published as a pre-release to rehearse the release and the install from its
