@@ -21,7 +21,7 @@ import { exitLabels, fitColumns, gridColumns, gridTracks, groupTerminals, mostRe
 import { moveTerminal, moveTerminalBy, readOrder } from '/terminal-order-model.js';
 import { withSleepingGroups } from '/features/sleeping-model.js';
 import { terminalBody } from '/features/agent-picker-model.js';
-import { returningSizes } from '/terminal-size.js';
+import { inputRetakeDue, returningSizes } from '/terminal-size.js';
 import { paneStatus } from '/pane-status-model.js';
 import { showsAsTab } from '/terminal-kind-model.js';
 import { matches, normalizeSelection, paneToShow, showsTerminal } from '/features/state-filter-model.js';
@@ -396,6 +396,15 @@ export function connectTerminal(info, pane, body, hooks) {
   // Only a size measured on screen goes to the pty, not the one set to draw the replay.
   term.onResize(({ cols, rows }) => record.replaying || send({ t: 'r', c: cols, r: rows }));
   new ResizeObserver(() => refit(record)).observe(body);
+  // Typing or clicking here takes the pty size back from another window (a phone) that took it
+  // while this one kept the focus, so no focus event came. Real input only: xterm's onData also
+  // answers the program's queries, which would let an idle window take the size back.
+  const retakeOnInput = () => {
+    const now = Date.now();
+    if (inputRetakeDue(record.inputRetakeAt, now) && retakeSize(record)) record.inputRetakeAt = now;
+  };
+  pane.addEventListener('keydown', retakeOnInput, true);
+  pane.addEventListener('pointerdown', retakeOnInput, true);
   // A full-screen program redraws only the rows that change, so the replay may lack some
   // (an idle footer, the input box). It draws a whole frame when its size changes: shrink
   // the pty by a row, then give the size back.
@@ -615,18 +624,22 @@ function refit(record) {
 }
 
 /**
- * A window that comes back retakes the pty size: the pty keeps the
- * last size any window sent, and this window's panes did not change, so xterm's onResize
- * stays silent. Every visible terminal here sends its size again, even if unchanged.
+ * Sends `record`'s size to its pty even if unchanged: the pty keeps the last size any window
+ * sent, and this pane did not change, so xterm's onResize stays silent. False when nothing was
+ * sent: a hidden pane, a replay still being written, or a size never measured.
  */
+function retakeSize(record) {
+  const replaying = Boolean(record.replaying || record.replayWriting);
+  // Refitting mid-replay would rewrap it; refit() is false for a hidden pane.
+  const visible = !replaying && refit(record);
+  const [resend] = returningSizes([{ id: record.info.id, visible, replaying, cols: record.term.cols, rows: record.term.rows }]);
+  if (resend) record.send(resend.message);
+  return Boolean(resend);
+}
+
+/** A window that comes back retakes the pty size: every visible terminal here sends its size again. */
 function retakeSizes() {
-  const facts = [...terminals.values()].map((record) => {
-    const replaying = Boolean(record.replaying || record.replayWriting);
-    // Refitting mid-replay would rewrap it; refit() is false for a hidden pane.
-    const visible = !replaying && refit(record);
-    return { id: record.info.id, visible, replaying, cols: record.term.cols, rows: record.term.rows };
-  });
-  for (const { id, message } of returningSizes(facts)) terminals.get(id)?.send(message);
+  for (const record of terminals.values()) retakeSize(record);
 }
 
 /**

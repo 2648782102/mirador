@@ -1,7 +1,8 @@
-// Pure rule behind a returning window retaking the pty size (public/terminal-size.js).
+// Pure rules behind a window retaking the pty size (public/terminal-size.js): when it comes back,
+// and when the user types or clicks in a terminal.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { returningSizes } from '../public/terminal-size.js';
+import { INPUT_RETAKE_GAP, inputRetakeDue, returningSizes } from '../public/terminal-size.js';
 
 const record = (id: string, visible: boolean, replaying: boolean, cols: number, rows: number) => ({ id, visible, replaying, cols, rows });
 
@@ -34,4 +35,13 @@ test('two visible terminals with the same unchanged size both resend, in order, 
     { id: 'b', message: { t: 'r', c: 80, r: 24 } },
   ]);
   assert.deepEqual(Object.keys(messages[0].message), ['t', 'c', 'r']);
+});
+
+test('typing or clicking resends the size the first time, then at most once per INPUT_RETAKE_GAP (1 s)', () => {
+  assert.equal(INPUT_RETAKE_GAP, 1000);
+  assert.equal(inputRetakeDue(undefined, 5000), true, 'never resent: resend');
+  assert.equal(inputRetakeDue(5000, 5000), false, 'same moment: no');
+  assert.equal(inputRetakeDue(5000, 5999), false, 'inside the gap: no');
+  assert.equal(inputRetakeDue(5000, 6000), true, 'the gap passed: resend');
+  assert.equal(inputRetakeDue(5000, 7500, 3000), false, 'a longer gap given: still inside it');
 });

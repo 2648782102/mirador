@@ -3,6 +3,8 @@
 // without asking the server to close it again. The real terminals.js runs in Node on a DOM
 // stand-in, a fake xterm and a fake API, trimmed from test/tab-agent-icon.test.ts. An agent put to
 // sleep ({t:'c', reason:'sleep'}) leaves the same way, and features/sleeping.js says so for about 8 s.
+// The same page also checks that typing or clicking in a terminal takes its size back from another
+// window (a phone) that took it while this one kept the focus.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
@@ -70,11 +72,11 @@ class FakeElement {
   style: Record<string, string> = {};
   draggable = false;
   clientWidth = 0;
-  offsetParent = null;
+  offsetParent: object | null = null;
   localName: string;
   constructor(tag: string) { this.localName = tag.toLowerCase(); }
   get tagName() { return this.localName.toUpperCase(); }
-  get parentElement() { return this.parentNode instanceof FakeElement ? this.parentNode : null; }
+  get parentElement(): FakeElement | null { return this.parentNode instanceof FakeElement ? this.parentNode : null; }
   get children() { return this.childNodes.filter((c): c is FakeElement => c instanceof FakeElement); }
   get firstElementChild() { return this.children[0] ?? null; }
   get nextElementSibling(): FakeElement | null {
@@ -151,6 +153,8 @@ class FakeElement {
   addEventListener(type: string, listener: () => void) { this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]); }
   removeEventListener() {}
   click() { for (const listener of this.listeners.get('click') ?? []) listener(); }
+  /** Runs the listeners for `type`, as a real event reaching this element would. */
+  fire(type: string) { for (const listener of this.listeners.get(type) ?? []) listener(); }
   focus() {}
   scrollIntoView() {}
   getBoundingClientRect() { return { left: 0, width: 0 }; }
@@ -209,13 +213,19 @@ class FakeSocket {
     sockets.push(this);
   }
   addEventListener(type: string, listener: (event: unknown) => void) { this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]); }
-  send() {}
+  /** The messages terminals.js sent, parsed. */
+  sent: unknown[] = [];
+  send(data: string) { this.sent.push(JSON.parse(data)); }
   close() {}
   receive(message: unknown) { for (const listener of this.listeners.get('message') ?? []) listener({ data: JSON.stringify(message) }); }
 }
 
 Object.assign(globalThis, {
-  window: { addEventListener() {} },
+  window: {
+    /** Listeners on window, last boot last: `focus` retakes the sizes. */
+    listeners: [] as Array<[string, () => void]>,
+    addEventListener(type: string, listener: () => void) { this.listeners.push([type, listener]); },
+  },
   location: { host: '127.0.0.1:4317', hash: '' },
   WebSocket: FakeSocket,
   ResizeObserver: class { observe() {} },
@@ -278,6 +288,7 @@ async function boot(running: object[]) {
     nodes: (id: string) => doc.querySelectorAll(`[data-terminal-id="${id}"]`).length,
     active: () => doc.querySelectorAll('#panes .active').map((pane) => pane.getAttribute('data-terminal-id')),
     lines: () => doc.querySelectorAll('[data-slot="alerts"] .slept-line'),
+    pane: (id: string) => doc.querySelector(`#panes [data-terminal-id="${id}"]`)!,
   };
 }
 
@@ -403,5 +414,48 @@ test('Despertar on that line wakes the sleeping agent by its terminal id and the
   t.mock.timers.reset();
   await new Promise((resolve) => setTimeout(resolve, 10));
   assert.deepEqual(page.calls, ['POST /api/terminals/sleeping/t-a/wake']);
+  page.stop();
+});
+
+test('typing or clicking in a shown terminal resends its size once, even unchanged, then waits 1 s; a hidden one sends nothing', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 10_000 });
+  const page = await boot([info('t-a'), info('t-b')]);
+  const socket = page.socket('t-a');
+  socket.readyState = FakeSocket.OPEN;
+  page.socket('t-b').readyState = FakeSocket.OPEN;
+  const pane = page.pane('t-a');
+  pane.offsetParent = page.pane('t-a').parentElement;
+  socket.sent.length = 0;
+  pane.fire('keydown');
+  assert.deepEqual(socket.sent, [{ t: 'r', c: 80, r: 24 }], 'the first key takes the size back');
+  pane.fire('keydown');
+  pane.fire('pointerdown');
+  t.mock.timers.tick(999);
+  pane.fire('keydown');
+  assert.equal(socket.sent.length, 1, 'more input inside 1 s sends nothing more');
+  t.mock.timers.tick(1);
+  pane.fire('pointerdown');
+  assert.deepEqual(socket.sent, [{ t: 'r', c: 80, r: 24 }, { t: 'r', c: 80, r: 24 }], 'a click after 1 s takes it again');
+  // A pane not on screen has no size of its own: input reaching it sends nothing.
+  const hidden = page.socket('t-b');
+  hidden.sent.length = 0;
+  page.pane('t-b').offsetParent = null;
+  page.pane('t-b').fire('keydown');
+  page.pane('t-b').fire('pointerdown');
+  assert.deepEqual(hidden.sent, []);
+  page.stop();
+});
+
+test('kept: the window taking the focus back resends the size of every shown terminal, even unchanged, and not of a hidden one', async () => {
+  const page = await boot([info('t-a'), info('t-b')]);
+  const [shown, hidden] = [page.socket('t-a'), page.socket('t-b')];
+  shown.readyState = hidden.readyState = FakeSocket.OPEN;
+  page.pane('t-a').offsetParent = page.pane('t-a').parentElement;
+  page.pane('t-b').offsetParent = null;
+  shown.sent.length = hidden.sent.length = 0;
+  const focus = (globalThis as any).window.listeners.findLast(([type]: [string]) => type === 'focus')[1];
+  focus();
+  assert.deepEqual(shown.sent, [{ t: 'r', c: 80, r: 24 }]);
+  assert.deepEqual(hidden.sent, []);
   page.stop();
 });
