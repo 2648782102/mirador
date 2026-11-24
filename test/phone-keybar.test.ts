@@ -294,3 +294,14 @@ test('S1/L3: closing a terminal that is not on screen leaves the view on the one
   page.press('Tab');
   assert.deepEqual(page.received, [{ id: ALPHA.id, bytes: '\t' }]);
 });
+
+test('S1/L3: closing the only terminal, with nothing to activate, goes back to the inbox', async () => {
+  const page = await boot([ALPHA]);
+  page.openCard(ALPHA.id);
+  page.close(ALPHA.id);
+  assert.deepEqual(page.onScreen(), []);
+  assert.equal(page.view(), 'inbox');
+  assert.equal(page.header(), '');
+  for (const { key } of KEY_BAR) page.press(key);
+  assert.deepEqual(page.received, []);
+});
