@@ -102,8 +102,9 @@ On the draft release (**Releases**), before publishing it:
 
 A release candidate (`0.2.0-rc.1`) goes through the same steps, with three differences:
 
-- When publishing it, tick **Set as a pre-release**, so the releases page keeps the last stable release as
-  **Latest**. The flag stays editable after publishing.
+- The workflow creates its draft as a pre-release, because the tag has a pre-release suffix, so the releases
+  page keeps the last stable release as **Latest**. Before publishing, check that **Set as a pre-release** is
+  ticked. The flag stays editable after publishing.
 - With immutable releases on, a published candidate's tag and assets cannot change and its tag name cannot be
   used again, even after the release is deleted: a fix ships as the next candidate (`-rc.2`).
 - No promotion PR: `scripts/bootstrap.sh` in main never pins a candidate. To try the install end to end, run a

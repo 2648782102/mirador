@@ -186,4 +186,10 @@ jobs:
             sh scripts/release/pins.sh "$version" dist/SHA256SUMS
             echo '```'
           } > notes.md
-          gh release create "$TAG" --draft --verify-tag --title "Mirador $TAG" --notes-file notes.md dist/mirador-*.tar.gz dist/SHA256SUMS
+          # A tag with a SemVer pre-release suffix (v0.2.0-rc.1) makes a pre-release, so a candidate never
+          # becomes the repository's latest release. A plain vX.Y.Z makes a normal release.
+          case "$version" in
+            *-*) set -- --prerelease ;;
+            *) set -- ;;
+          esac
+          gh release create "$TAG" --draft "$@" --verify-tag --title "Mirador $TAG" --notes-file notes.md dist/mirador-*.tar.gz dist/SHA256SUMS
