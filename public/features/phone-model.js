@@ -110,3 +110,16 @@ export function keyBytes(key, { applicationCursor = false } = {}) {
   if (Object.hasOwn(ARROW, key)) return `${ESC}${applicationCursor ? 'O' : '['}${ARROW[key]}`;
   return null;
 }
+
+/**
+ * The terminal lines a finger drag of `dy` px scrolls (#67), for `term.scrollLines`, with `rest` the
+ * px short of a line kept from the last move: a finger moving down (dy > 0) shows older lines, so
+ * the history scrolls up (negative lines). `cellHeight` is one row's px; one that is zero, negative
+ * or not a number, or a `dy` that is not one, scrolls nothing and keeps no rest.
+ */
+export function dragLines(dy, cellHeight, rest = 0) {
+  if (!(cellHeight > 0) || !Number.isFinite(cellHeight) || !Number.isFinite(dy)) return { lines: 0, rest: 0 };
+  const total = rest + dy;
+  const lines = 0 - Math.trunc(total / cellHeight);
+  return { lines, rest: total + lines * cellHeight };
+}
