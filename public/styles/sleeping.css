@@ -34,6 +34,11 @@
 .sleep-actions { display: flex; gap: 6px; margin-left: auto; }
 .sleep-actions .btn { min-height: 32px; padding: 4px 12px; }
 
+/* The line saying an agent went to sleep, in the alerts slot (above the inbox on the phone). */
+.alerts-slot > .slept-line { flex: 1; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0; color: var(--muted); }
+.slept-line > span { min-width: 0; overflow-wrap: anywhere; }
+.slept-line .btn { min-height: 32px; padding: 4px 12px; }
+
 /* Seguimiento's dock: the reason and "Despertar todos" above the sleeping cards. */
 .tracking-sleep-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0 0 6px; }
 .tracking-sleep-head .tracking-note { flex: 1 1 200px; margin: 0; }

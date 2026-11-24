@@ -12,8 +12,11 @@
 //   (`launches` event) and they appear as tabs as they open. They are never blocked while other
 //   agents open: the server queues them behind the run in progress.
 // - Olvidar (DELETE …/:id) asks first; focus starts on Cancelar.
+// - An open agent put to sleep while Mirador runs leaves its tab in every window (terminals.js
+//   `slept`): one role=status line in the alerts slot says so for about 8 s, with Despertar. On the
+//   phone that slot sits above the inbox. A newer line replaces it.
 // Rules live in sleeping-model.js.
-import { api, el, emit, errorText, on, t, workspaceById } from '/core.js';
+import { api, el, emit, errorText, on, slot, t, workspaceById } from '/core.js';
 import { confirmDialog, openDialog, showAlert } from '/dialog.js';
 import { icon } from '/icons.js';
 import { setSleeping } from '/terminals.js';
@@ -28,6 +31,35 @@ export function sleepingAgents() {
 }
 
 const nameOf = (agent) => agent.rel || workspaceById(agent.workspaceId)?.name || agent.workspaceId;
+
+/** How long the line saying an agent went to sleep stays. */
+const SLEPT_LINE_MS = 8000;
+let sleptLine = null;
+let sleptTimer = null;
+
+function hideSlept() {
+  clearTimeout(sleptTimer);
+  sleptLine?.remove();
+  sleptLine = null;
+}
+
+/**
+ * Open agent `info` was put to sleep (terminals.js `slept`): "«{name}» se durmió · está en Dormidos
+ * · [Despertar]" for about 8 s; its sleeping record has its terminal id. Not modal: never takes focus.
+ */
+export function showSlept(info) {
+  hideSlept();
+  const host = slot('alerts');
+  if (!host) return;
+  const wake = el('button', { type: 'button', class: 'btn', title: t('sleeping.wakeTitle') }, t('sleeping.wake'));
+  wake.addEventListener('click', () => {
+    hideSlept();
+    wakeSleeping(info.id);
+  });
+  sleptLine = el('p', { class: 'slept-line', role: 'status' }, el('span', {}, t('sleeping.slept', { name: nameOf(info) })), wake);
+  host.append(sleptLine);
+  sleptTimer = setTimeout(hideSlept, SLEPT_LINE_MS);
+}
 
 export function refreshSleeping() {
   reading ??= read().finally(() => (reading = null));
@@ -139,6 +171,7 @@ async function openWorkspace(workspaceId) {
 export async function init() {
   // The entries follow the language and workspace names through terminals.js's own re-render.
   on('terminals', refreshSleeping);
+  on('slept', showSlept);
   document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && refreshSleeping());
   await refreshSleeping();
 }

@@ -4,6 +4,8 @@
 // active terminal whose pane alone has `.pane.active` (activateTerminal, which emits `activate`
 // only for a terminal that exists), typeKey, which sends a key's bytes to a live terminal only, and
 // closeTerminal's order: drop the terminal, activate the next one, then emit `terminals` (L3).
+// A terminal closed in another window leaves in that same order (terminals.js dropTerminal, on the
+// server's close message), without this window's ×.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
@@ -162,9 +164,10 @@ async function boot(infos: Info[]) {
       for (const pane of panes.children) pane.classList.toggle('active', pane.getAttribute('data-terminal-id') === id);
       if (live.has(id)) core.emit('activate', id);
     },
-    // terminals.js closeTerminal: drop it and its pane, activate the most recent one left, and only
-    // then emit `terminals` without the closed one.
-    close(id: string) {
+    // terminals.js dropTerminal, which its own × (closeTerminal) and a close in another window (the
+    // server's close message) both run: drop it and its pane, activate the most recent one left,
+    // and only then emit `terminals` without the closed one.
+    drop(id: string) {
       if (!live.delete(id)) return;
       activations.delete(id);
       panes.children.find((pane) => pane.getAttribute('data-terminal-id') === id)?.remove();
@@ -195,7 +198,9 @@ async function boot(infos: Info[]) {
     /** Something else shows another terminal: a notification click (features/inbox.js), an `activate`. */
     activate: (id: string) => terminals.activate(id),
     /** Its tab's close control (terminals.js closeTerminal). */
-    close: (id: string) => terminals.close(id),
+    close: (id: string) => terminals.drop(id),
+    /** Closed in another window: the server's close message reaches this one (terminals.js connectTerminal). */
+    closedElsewhere: (id: string) => terminals.drop(id),
     /** A press on the key bar's `key`, as a finger does it. */
     press(key: string) {
       const button = doc.getElementById('phone-keys')!.children.find((node) => node.getAttribute('data-key') === key);
@@ -304,4 +309,26 @@ test('S1/L3: closing the only terminal, with nothing to activate, goes back to t
   assert.equal(page.header(), '');
   for (const { key } of KEY_BAR) page.press(key);
   assert.deepEqual(page.received, []);
+});
+
+test('S2: the terminal on screen closed in another window goes back to the inbox; no key reaches the one activated in its place', async () => {
+  const page = await boot([ALPHA, BETA]);
+  page.openCard(ALPHA.id);
+  page.closedElsewhere(ALPHA.id);
+  assert.deepEqual(page.onScreen(), [BETA.id], 'the next terminal became active here too');
+  assert.equal(page.view(), 'inbox');
+  assert.equal(page.header(), '');
+  for (const { key } of KEY_BAR) page.press(key);
+  assert.deepEqual(page.received, [], 'no key reaches beta, nor the closed alpha');
+});
+
+test('S2: a terminal closed in another window while not on screen leaves the view on the one shown', async () => {
+  const page = await boot([ALPHA, BETA]);
+  page.openCard(ALPHA.id);
+  page.closedElsewhere(BETA.id);
+  assert.equal(page.view(), 'terminal');
+  assert.deepEqual(page.onScreen(), [ALPHA.id]);
+  assert.equal(page.header(), 'alpha · Dev › api › v2');
+  page.press('Enter');
+  assert.deepEqual(page.received, [{ id: ALPHA.id, bytes: '\r' }]);
 });

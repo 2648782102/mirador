@@ -21,6 +21,8 @@
   .topbar-figure { display: none; }
   /* The phone's own controls: 44px targets (WCAG 2.5.5), whatever the pointer. */
   .phone-back, .phone-full, .phone-to-inbox { min-height: 44px; min-width: 44px; }
+  /* The line saying an agent went to sleep (features/sleeping.js) stays in the alerts slot, above the inbox. */
+  .slept-line .btn { min-height: 44px; min-width: 44px; }
   .phone-back { display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 0 12px 0 8px; }
   .phone-back > svg.icon { transform: scaleX(-1); }
 
