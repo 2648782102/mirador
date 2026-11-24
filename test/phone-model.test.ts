@@ -16,8 +16,9 @@ type PhoneModel = {
   showsActiveTerminal: (view: View) => boolean;
   inboxHeader: (items: Array<{ terminalId: string; kind: string }>, stream: string | undefined, t: Translate) => { title: string; state: string; live: boolean };
   keyBytes: (key: string, mode: { applicationCursor: boolean }) => string | null;
+  dragLines: (dy: number, cellHeight: number, rest?: number) => { lines: number; rest: number };
 };
-const { KEY_BAR, PHONE_MAX_WIDTH, PHONE_QUERY, inboxHeader, isNarrow, keyBytes, nextView, showsActiveTerminal }: PhoneModel = await import(new URL('../public/features/phone-model.js', import.meta.url).href);
+const { KEY_BAR, PHONE_MAX_WIDTH, PHONE_QUERY, dragLines, inboxHeader, isNarrow, keyBytes, nextView, showsActiveTerminal }: PhoneModel = await import(new URL('../public/features/phone-model.js', import.meta.url).href);
 const { translate }: { translate: (language: string, key: string, vars?: Record<string, unknown>) => string } = await import(new URL('../public/i18n.js', import.meta.url).href);
 
 const ESC = '\x1b';
@@ -103,4 +104,36 @@ test('the inbox leaves out the active terminal\'s card only where that terminal 
   assert.equal(showsActiveTerminal('terminal'), true);
   // The phone's inbox covers the deck: every waiting terminal is listed, the active one too.
   assert.equal(showsActiveTerminal('inbox'), false);
+});
+
+test('#67 S2, S5: a finger moving down shows older lines (the history scrolls up), moving up newer ones', () => {
+  assert.deepEqual(dragLines(40, 10, 0), { lines: -4, rest: 0 });
+  assert.deepEqual(dragLines(-40, 10, 0), { lines: 4, rest: 0 });
+  assert.deepEqual(dragLines(25, 10), { lines: -2, rest: 5 }, 'rest defaults to 0; what is short of a line stays');
+  assert.deepEqual(dragLines(-25, 10), { lines: 2, rest: -5 });
+});
+
+test('#67 S5: the pixels short of a line add up across moves; a move under one line scrolls nothing yet', () => {
+  let rest = 0;
+  const lines: number[] = [];
+  for (const dy of [6, 6, 6, 6, 6, 6]) {
+    const step = dragLines(dy, 17, rest);
+    lines.push(step.lines);
+    rest = step.rest;
+  }
+  assert.deepEqual(lines, [0, 0, -1, 0, 0, -1], '36 px over 17 px lines: a line at 18 px, the next at 36 px');
+  assert.equal(rest, 2, 'what is short of the next line stays for the next move');
+  assert.deepEqual(dragLines(3, 17, 0), { lines: 0, rest: 3 });
+  assert.deepEqual(dragLines(-3, 17, 2), { lines: 0, rest: -1 });
+  // Back the other way: the rest of the earlier direction counts against it.
+  assert.deepEqual(dragLines(-20, 10, 5), { lines: 1, rest: -5 });
+});
+
+test('#67 S5: no move scrolls nothing, and neither does a cell height that is zero, negative or not a number', () => {
+  assert.deepEqual(dragLines(0, 17, 0), { lines: 0, rest: 0 });
+  assert.deepEqual(dragLines(0, 17, 5), { lines: 0, rest: 5 });
+  for (const cellHeight of [0, -17, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.deepEqual(dragLines(120, cellHeight, 4), { lines: 0, rest: 0 }, String(cellHeight));
+  }
+  assert.deepEqual(dragLines(Number.NaN, 17, 4), { lines: 0, rest: 0 }, 'a move that is not a number');
 });

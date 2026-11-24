@@ -27,12 +27,14 @@ import { showsAsTab, unknownTerminalIds } from '/terminal-kind-model.js';
 import { matches, normalizeSelection, paneToShow, showsTerminal } from '/features/state-filter-model.js';
 import { fileChecker, findFileLinks, linkRange, openableFiles, splitPath } from '/features/file-links-model.js';
 import { revealRequest } from '/features/tree-reveal-model.js';
-import { keyBytes } from '/features/phone-model.js';
+import { dragLines, keyBytes } from '/features/phone-model.js';
 
 const terminals = new Map();
 const INPUT_CHUNK = 64 * 1024;
 // Long enough for the program to see the shorter size before it gets its size back.
 const REPAINT_DELAY = 200;
+// How far, in CSS px, a finger moves over a terminal before it scrolls instead of tapping.
+const TOUCH_SLOP = 8;
 let activeId = null;
 let layout = prefs.read('layout', 'tabs');
 // The last measured width of the terminals area (applyLayout); unmeasured, the grid stays near-square.
@@ -359,6 +361,29 @@ function mountTerminal(info) {
 }
 
 /**
+ * A finger dragged over `term` (in `body`) scrolls its history (#67): xterm 6 does not, and the page
+ * would move instead. Under TOUCH_SLOP px it stays a tap (focus, the keyboard, a link's click);
+ * past it each move is cancelled, so the page stays put. A full-screen program (the alternate
+ * buffer) gets its touches untouched. Mouse and pen input never reach here.
+ */
+function scrollByTouch(term, body) {
+  let touch = null;
+  body.addEventListener('touchstart', (event) => {
+    touch = event.touches.length === 1 ? { y: event.touches[0].clientY, dragging: false, rest: 0 } : null;
+  }, { passive: true });
+  body.addEventListener('touchmove', (event) => {
+    if (!touch || event.touches.length !== 1 || term.buffer.active.type === 'alternate') return;
+    const y = event.touches[0].clientY;
+    if (!touch.dragging && Math.abs(y - touch.y) < TOUCH_SLOP) return;
+    if (event.cancelable) event.preventDefault();
+    const cellHeight = (body.querySelector('.xterm-screen')?.clientHeight ?? 0) / term.rows;
+    const { lines, rest } = dragLines(y - touch.y, cellHeight, touch.rest);
+    touch = { y, dragging: true, rest };
+    if (lines) term.scrollLines(lines);
+  }, { passive: false });
+}
+
+/**
  * Opens an xterm for `info` in `body` (inside `pane`, which must be in the document and is what
  * refit measures) and attaches it to the terminal's WebSocket. `hooks`: created(record) once the
  * record exists, status(record) when its info changes, exited(record) after the exit line is
@@ -405,6 +430,7 @@ export function connectTerminal(info, pane, body, hooks) {
   };
   pane.addEventListener('keydown', retakeOnInput, true);
   pane.addEventListener('pointerdown', retakeOnInput, true);
+  scrollByTouch(term, body);
   // A full-screen program redraws only the rows that change, so the replay may lack some
   // (an idle footer, the input box). It draws a whole frame when its size changes: shrink
   // the pty by a row, then give the size back.

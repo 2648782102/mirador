@@ -80,6 +80,16 @@ test('S5: on a coarse pointer the card, "open file", the notification toggle and
   assert.equal(declared(coarse, '.inbox-notify').gap, '8px');
 });
 
+test('#67 S2: in the terminal view a finger on the terminal never pans or bounces the page; the key bar still scrolls sideways', () => {
+  for (const selector of ['body[data-phone="terminal"] .pane-body', 'body[data-phone="terminal"] .pane-body *']) {
+    const terminal = declared(narrow, selector);
+    assert.equal(terminal['touch-action'], 'none', `${selector}: terminals.js scrolls the history itself`);
+    assert.equal(terminal['overscroll-behavior'], 'contain', selector);
+  }
+  assert.equal(declared(narrow, 'body[data-phone="terminal"] .phone-keys')['touch-action'], undefined, 'the key bar keeps its own panning');
+  assert.equal(rules(narrow).some(([selectors, declarations]) => declarations['touch-action'] && selectors.some((s) => s.includes('phone-key'))), false);
+});
+
 test('S5: a coarse pointer only enlarges and spaces the controls; it never switches the layout', () => {
   for (const [selectors, declarations] of rules(coarse)) {
     for (const property of Object.keys(declarations)) {
