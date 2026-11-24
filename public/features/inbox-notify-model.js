@@ -3,6 +3,8 @@
 // - One card: "{project} · {reason}"; the body is the question or detail (when there is one),
 //   then "{agent} · {workspace › folder › …}". The project is the folder's last part, or the
 //   workspace at its root.
+// - A guarded command (GUARDED_LABEL): only "{project} · {reason}", with an empty body. The command
+//   may carry a token, and the desktop's notification history keeps a notice after the card closes.
 // - A burst (GROUP_AT or more new cards within the page's window, inbox-notify.js NOTIFY_WINDOW_MS):
 //   "{n} agents are waiting for you", the projects in the body, under one tag, so a later burst replaces it.
 // - Discreet mode: "An agent is waiting for you" (or the burst title), with no project, question
@@ -27,6 +29,8 @@ const BADGE = '/notify-badge.png';
 export const GROUP_AT = 3;
 /** The burst notification's tag: one at a time, a later burst replaces it. */
 export const GROUP_TAG = 'mirador-inbox:group';
+/** gentle-shell's blocker label for a guarded command (inbox.js REASONS): its notice never shows the command. */
+export const GUARDED_LABEL = 'Guarded command confirmation';
 /** The longest line of agent text a notification shows. */
 const TEXT_MAX = 120;
 
@@ -75,11 +79,13 @@ export function cardNotification(item, text) {
   const tag = `mirador-inbox:${item.terminalId}:${item.since}`;
   const requireInteraction = text.stay !== false && asksYou(item);
   if (text.discreet) return { title: waitingTitle(text, 1), options: { body: '', tag, requireInteraction, ...common(text, item.since) } };
+  const title = `${projectOf(item, text.workspace)} · ${agentText(text.reason)}`;
+  if (item.label === GUARDED_LABEL) return { title, options: { body: '', tag, requireInteraction, ...common(text, item.since) } };
   const agent = agentText(text.agent);
   const where = pathOf(item, text.workspace);
   const lines = [agentText(item.detail), agent ? `${agent} · ${where}` : where].filter(Boolean);
   return {
-    title: `${projectOf(item, text.workspace)} · ${agentText(text.reason)}`,
+    title,
     options: { body: lines.join('\n'), tag, requireInteraction, ...common(text, item.since) },
   };
 }

@@ -3,7 +3,7 @@
 // Pure: no DOM, no Notification class.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { agentText, asksYou, cardNotification, GROUP_AT, GROUP_TAG, groupNotification, NOTIFY_DISCREET_PREF, NOTIFY_STAY_PREF } from '../public/features/inbox-notify-model.js';
+import { agentText, asksYou, cardNotification, GROUP_AT, GROUP_TAG, GUARDED_LABEL, groupNotification, NOTIFY_DISCREET_PREF, NOTIFY_STAY_PREF } from '../public/features/inbox-notify-model.js';
 
 const T0 = '2026-10-28T10:00:00.000Z';
 const T1 = '2026-10-28T10:05:00.000Z';
@@ -26,6 +26,20 @@ test('each kind of card: "{project} · {reason}", the question then "{agent} · 
     options: { body: 'Build failed\nClaude Code · Dev › web › mi-proyecto', tag: `mirador-inbox:t3:${T0}`, requireInteraction: false, ...IMAGES, lang: 'en', timestamp: Date.parse(T0) },
   });
   assert.deepEqual(['blocked', 'prompt', 'error', 'finished'].map((kind) => asksYou(item('t', kind))), [true, true, false, false]);
+});
+
+test('a guarded command: only "{project} · {reason}", never the command (it may carry a token); same tag and options', () => {
+  assert.equal(GUARDED_LABEL, 'Guarded command confirmation');
+  const guarded = item('t1', 'blocked', { label: GUARDED_LABEL, detail: 'TOKEN=abc123 deploy' });
+  const shown = cardNotification(guarded, text({ reason: 'Confirm a guarded command' }));
+  assert.deepEqual(shown, {
+    title: 'mi-proyecto · Confirm a guarded command',
+    options: { body: '', tag: `mirador-inbox:t1:${T0}`, requireInteraction: true, ...IMAGES, lang: 'en', timestamp: Date.parse(T0) },
+  });
+  assert.doesNotMatch(JSON.stringify(shown), /abc123|deploy|Claude|Dev ›/);
+  assert.equal(cardNotification(guarded, text({ discreet: true })).title, 'An agent is waiting for you', 'discreet mode unchanged');
+  const questionnaire = item('t2', 'blocked', { label: 'Questionnaire awaiting input', detail: 'Which database should I use?' });
+  assert.equal(cardNotification(questionnaire, text()).options.body, 'Which database should I use?\nClaude Code · Dev › web › mi-proyecto');
 });
 
 test('at the workspace root the project is the workspace; without an agent the second line is only the path', () => {

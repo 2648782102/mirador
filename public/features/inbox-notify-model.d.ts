@@ -12,11 +12,15 @@ export interface NotifyCard {
   rel?: unknown;
   /** The question or the detail, agent text. */
   detail?: unknown;
+  /** Why it waits; GUARDED_LABEL hides the detail, agent and path. */
+  label?: unknown;
 }
 
 /** localStorage keys (core.js prefs): notices that ask stay on screen (default on); discreet mode (default off). */
 export const NOTIFY_STAY_PREF: 'inboxNotifyStay';
 export const NOTIFY_DISCREET_PREF: 'inboxNotifyDiscreet';
+/** gentle-shell's blocker label for a guarded command: its notice shows only the project and the reason. */
+export const GUARDED_LABEL: 'Guarded command confirmation';
 /** New cards within the page's window from which one notification stands for all of them. */
 export const GROUP_AT: 3;
 /** The burst notification's tag. */
@@ -61,7 +65,7 @@ export interface NotifyText {
 export function agentText(text: unknown, max?: number): string;
 /** A blocker or a dialog asks something of the user. */
 export function asksYou(item: { kind?: unknown }): boolean;
-/** One card's notification: "{project} · {reason}", the question, then "{agent} · {path}". */
+/** One card's notification: "{project} · {reason}", the question, then "{agent} · {path}" (no body for a guarded command). */
 export function cardNotification(item: NotifyCard, text: NotifyCardText): NotifyText;
 /** A burst's notification: how many wait and their projects, under GROUP_TAG. */
 export function groupNotification(entries: ReadonlyArray<{ item: NotifyCard; workspace: string }>, text: NotifyWords & { waiting: (count: number) => string }): NotifyText;

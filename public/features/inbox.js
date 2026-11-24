@@ -23,14 +23,14 @@ import { icon } from '/icons.js';
 import { tabAgent } from '/icons/agents.js';
 import { answers, cardLayout, inboxGroups, streamWatch, waitLabel } from '/features/inbox-model.js';
 import { createInboxNotifier, NOTIFY_PREF, NOTIFY_WINDOW_MS, showGroupNotification, showNotification as showCardNotification } from '/features/inbox-notify.js';
-import { NOTIFY_DISCREET_PREF, NOTIFY_STAY_PREF } from '/features/inbox-notify-model.js';
+import { GUARDED_LABEL, NOTIFY_DISCREET_PREF, NOTIFY_STAY_PREF } from '/features/inbox-notify-model.js';
 import { activateTerminal, activeTerminalId, markWaiting, terminalList } from '/terminals.js';
 import { showsActiveTerminal } from '/features/phone-model.js';
 
 /** gentle-shell's blocker labels, translated; any other label is shown as the agent wrote it. */
 // Tracking: exported so the tracking view words blockers the same way.
 export const REASONS = {
-  'Guarded command confirmation': 'inbox.reason.guarded',
+  [GUARDED_LABEL]: 'inbox.reason.guarded',
   'Questionnaire awaiting input': 'inbox.reason.questionnaire',
   'Choice awaiting input': 'inbox.reason.choice',
   'Awaiting input': 'inbox.reason.input',

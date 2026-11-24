@@ -367,6 +367,16 @@ test('the view: a card notification says who waits; it stays on screen, is not d
   assert.deepEqual([error.title, error.options.body, error.options.requireInteraction, error.options.lang], ['api · inbox.reason.error', 'Dev › api', false, 'es'], 'no terminal here: only the path; an error does not stay; the language at the end of the window');
 });
 
+test('the view: a guarded command notifies only its project and reason, never the command', async () => {
+  const feed = await live();
+  feed.send([{ ...question('t1'), label: 'Guarded command confirmation', detail: 'TOKEN=abc123 deploy' }]);
+  await settle();
+  endWindow();
+  const [notice] = FakeNotification.made;
+  assert.deepEqual([notice.title, notice.options.body, notice.options.requireInteraction], ['mi-proyecto · inbox.reason.guarded', '', true]);
+  assert.doesNotMatch(JSON.stringify([notice.title, notice.options]), /abc123|deploy|Claude/);
+});
+
 test('the view: discreet mode, ticked inside the window, hides the project, question, path and agent; the choice is kept', async () => {
   const feed = await live();
   feed.send([question('t1')]);
