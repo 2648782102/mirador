@@ -66,6 +66,8 @@ const watch = streamWatch({
   },
   clearTimer: (id) => clearTimeout(id),
 });
+/** Ends follow()'s pending backoff wait at once; null when it is not waiting. */
+let wake = null;
 const baseTitle = document.title.replace(/^\(\d+\)\s*/, '') || BRAND;
 
 /** A night note with no card behind it has no label: a question, or a note to an agent that had not finished. */
@@ -292,7 +294,8 @@ function setStream(next) {
 /**
  * Reads the stream for as long as the window lives; reconnects with backoff, stops on 401. A try
  * that reads nothing (not even the `{}` heartbeat) for STREAM_SILENCE_MS is aborted, and one the page
- * comes back to after that long is aborted at once and retried without the backoff (the watch).
+ * comes back to after that long is aborted at once and retried without the backoff (the watch); the
+ * same return during a backoff wait ends the wait.
  */
 async function follow() {
   let delay = 1000;
@@ -347,7 +350,14 @@ async function follow() {
       continue;
     }
     setStream('reconnecting');
-    await new Promise((resolve) => setTimeout(resolve, delay));
+    await new Promise((resolve) => {
+      const id = setTimeout(resolve, delay);
+      wake = () => {
+        clearTimeout(id);
+        resolve();
+      };
+    });
+    wake = null;
     delay = Math.min(delay * 2, 30_000);
   }
 }
@@ -378,7 +388,7 @@ export async function init() {
   });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') watch.hidden();
-    else watch.visible();
+    else if (watch.visible()) wake?.();
     render();
   });
   setInterval(tick, TICK_MS);

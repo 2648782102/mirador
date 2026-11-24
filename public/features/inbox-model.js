@@ -79,7 +79,9 @@ export function streamStale({ since, now, hiddenAt = null, bound = STREAM_SILENC
  * aborted by its timer, and the caller retries with its backoff. `hidden()` and `visible()` follow
  * the page: coming back after being hidden for the bound, or to a try silent for the bound (a phone
  * holds timers while it sleeps), aborts the try at once, and `retryNow()` then says to skip the
- * backoff. A fresh try survives any number of flips, so nothing loops while the page is hidden.
+ * backoff. Between tries (no try open) the same return makes `visible()` answer true, and the caller
+ * ends its backoff wait. A fresh try survives any number of flips, so nothing loops while the page
+ * is hidden.
  */
 export function streamWatch({ now, setTimer, clearTimer, bound = STREAM_SILENCE_MS }) {
   let controller = null;
@@ -121,7 +123,9 @@ export function streamWatch({ now, setTimer, clearTimer, bound = STREAM_SILENCE_
     visible() {
       const was = hiddenAt;
       hiddenAt = null;
-      if (was === null || !controller || !streamStale({ since, now: now(), hiddenAt: was, bound })) return false;
+      if (was === null || !streamStale({ since, now: now(), hiddenAt: was, bound })) return false;
+      // Between tries: the caller ends its backoff wait and the next open() starts a fresh try.
+      if (!controller) return true;
       urgent = true;
       stopTimer();
       controller.abort();

@@ -270,6 +270,39 @@ test('visible again with no line seen for the bound (timers held while the phone
   assert.equal(inbox.inboxStream(), 'reconnecting');
 });
 
+test('visible again during the backoff wait after a long hide over a dead stream: the wait ends and a new try opens at once', async (t) => {
+  const { inbox, srv, doc } = await boot(t, 'dead');
+  doc.show('hidden');
+  // Five silent tries, each aborted at the bound; the fifth is followed by the 16 s backoff wait.
+  await advance(t, 5 * BOUND + 20_000);
+  assert.deepEqual(gaps(srv.attempts), [1000, 2000, 4000, 8000].map((delay) => BOUND + delay));
+  assert.equal(srv.attempts.length, 5, 'still inside the 16 s wait');
+  doc.show('visible');
+  await settle();
+  assert.equal(srv.attempts.length, 6, 'the pending wait ends and a new try opens at once');
+  assert.equal(srv.attempts[5].at, START + 5 * BOUND + 20_000, 'not after the rest of the backoff');
+  assert.equal(inbox.inboxStream(), 'reconnecting');
+  // The ended wait leaves nothing behind: no second try when its time would have come.
+  await advance(t, 11_000);
+  assert.equal(srv.attempts.length, 6);
+});
+
+test('hidden and visible again during the backoff wait after a short hide: the backoff is not cut', async (t) => {
+  const { inbox, srv, doc } = await boot(t, 'refused');
+  // Tries at 0, 1, 3, 7 and 15 s; the next waits 16 s, until 31 s.
+  await advance(t, 20_000);
+  assert.equal(srv.attempts.length, 5);
+  doc.show('hidden');
+  await advance(t, 3000);
+  doc.show('visible');
+  await settle();
+  assert.equal(srv.attempts.length, 5, 'a short hide does not end the wait');
+  await advance(t, 8000);
+  assert.equal(srv.attempts.length, 6, 'the try opens when the backoff ends');
+  assert.deepEqual(gaps(srv.attempts), [1000, 2000, 4000, 8000, 16000]);
+  assert.equal(inbox.inboxStream(), 'reconnecting');
+});
+
 /* ---------- 4. No reconnect storm ---------- */
 
 test('hidden on a dead tunnel: each try waits the bound, then the existing backoff; no storm', async (t) => {
