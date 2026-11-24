@@ -3,13 +3,13 @@
 // - One card: "{project} · {reason}"; the body is the question or detail (when there is one),
 //   then "{agent} · {workspace › folder › …}". The project is the folder's last part, or the
 //   workspace at its root.
-// - A burst (GROUP_AT or more new cards in one stream message): "{n} agents are waiting for you",
-//   the projects in the body, under one tag, so a later burst replaces it.
+// - A burst (GROUP_AT or more new cards within the page's window, inbox-notify.js NOTIFY_WINDOW_MS):
+//   "{n} agents are waiting for you", the projects in the body, under one tag, so a later burst replaces it.
 // - Discreet mode: "An agent is waiting for you" (or the burst title), with no project, question
 //   or path, for a shared screen.
 // Cards that ask something (a blocker or a dialog) stay on screen until the user acts
 // (`requireInteraction`), unless the user turned that off; an error never does.
-// Text that comes from the agent or the disk is one line, without control characters, and cut.
+// Text that comes from the agent or the disk is one line, without control or format characters, and cut.
 
 /** localStorage keys (core.js prefs): notices that ask stay on screen (default on); discreet mode (default off). */
 export const NOTIFY_STAY_PREF = 'inboxNotifyStay';
@@ -23,20 +23,23 @@ export const NOTIFY_DISCREET_PREF = 'inboxNotifyDiscreet';
 const ICON = '/notify-icon.png';
 const BADGE = '/notify-badge.png';
 
-/** New cards in one stream message from which one notification stands for all of them. */
+/** New cards within the page's window from which one notification stands for all of them. */
 export const GROUP_AT = 3;
 /** The burst notification's tag: one at a time, a later burst replaces it. */
 export const GROUP_TAG = 'mirador-inbox:group';
 /** The longest line of agent text a notification shows. */
 const TEXT_MAX = 120;
 
-// Line breaks and other control characters, zero-width marks and bidirectional overrides; the
-// zero-width joiner stays, it builds emoji.
-const CONTROL = /[\p{Cc}\u2028\u2029\u200B\u200C\u200E\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]+/gu;
+// Line breaks and other control characters, read as spaces.
+const CONTROL = /[\p{Cc}\u2028\u2029]+/gu;
+// Format characters (zero-width marks, bidirectional overrides and marks, the soft hyphen, tag
+// characters, the BOM), dropped: they show nothing, or hide or reorder what does. The zero-width
+// joiner stays, it builds emoji.
+const FORMAT = /(?:(?!\u200D)[\p{Cf}\u{E0000}-\u{E007F}])+/gu;
 
-/** One line of agent (or disk) text: control characters as spaces, spaces collapsed, cut to `max` characters with "…". */
+/** One line of agent (or disk) text: control characters as spaces, format characters dropped, spaces collapsed, cut to `max` characters with "…". */
 export function agentText(text, max = TEXT_MAX) {
-  const line = String(text ?? '').replace(CONTROL, ' ').replace(/\s+/g, ' ').trim();
+  const line = String(text ?? '').replace(FORMAT, '').replace(CONTROL, ' ').replace(/\s+/g, ' ').trim();
   const chars = [...line];
   return chars.length <= max ? line : `${chars.slice(0, max - 1).join('').trimEnd()}…`;
 }
@@ -50,6 +53,10 @@ const projectOf = (item, workspace) => agentText(folders(item).at(-1) ?? workspa
 /** "workspace › folder › subfolder". */
 const pathOf = (item, workspace) => [workspace, ...folders(item)].map((part) => agentText(part)).join(' › ');
 
+/** The discreet or burst title: `text.waiting(count)`, or English when the caller gave none. */
+const waitingTitle = (text, count) =>
+  typeof text.waiting === 'function' ? text.waiting(count) : count === 1 ? 'An agent is waiting for you' : `${count} agents are waiting for you`;
+
 /** What every notification carries: Mirador's images, the interface language and when the wait started. */
 function common(text, since) {
   const options = { icon: ICON, badge: BADGE };
@@ -62,12 +69,12 @@ function common(text, since) {
 /**
  * One card's notification, `{ title, options }`. `text`: `reason` (translated), `workspace` (its
  * name), `agent` (its name, or null when unknown), `lang`, `stay` (default true), `discreet`
- * (default false) and `waiting(count)`, the discreet title.
+ * (default false) and `waiting(count)`, the discreet title (English without it).
  */
 export function cardNotification(item, text) {
   const tag = `mirador-inbox:${item.terminalId}:${item.since}`;
   const requireInteraction = text.stay !== false && asksYou(item);
-  if (text.discreet) return { title: text.waiting(1), options: { body: '', tag, requireInteraction, ...common(text, item.since) } };
+  if (text.discreet) return { title: waitingTitle(text, 1), options: { body: '', tag, requireInteraction, ...common(text, item.since) } };
   const agent = agentText(text.agent);
   const where = pathOf(item, text.workspace);
   const lines = [agentText(item.detail), agent ? `${agent} · ${where}` : where].filter(Boolean);
@@ -86,7 +93,7 @@ export function groupNotification(entries, text) {
   const projects = [...new Set(entries.map(({ item, workspace }) => projectOf(item, workspace)))];
   const first = entries.map(({ item }) => item.since).sort()[0];
   return {
-    title: text.waiting(entries.length),
+    title: waitingTitle(text, entries.length),
     options: {
       body: text.discreet ? '' : projects.join(', '),
       tag: GROUP_TAG,

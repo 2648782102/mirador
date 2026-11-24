@@ -320,9 +320,21 @@ test('the view: one card, one notification, closed when the card leaves; a stale
   assert.deepEqual([focused, core.activated], [['window', 'window'], ['t1']], 'the stale click focuses Mirador and opens nothing');
 });
 
-// The window, through the view.
+// The wiring: what inbox.js passes to the notifications (inbox-notify-model.js words them).
 
 const question = (terminalId: string, rel = 'web/mi-proyecto', since = T0) => ({ ...card(terminalId, 'blocked', since), rel, label: 'Choice awaiting input', detail: 'Which database should I use?' });
+
+/** The two switches beside the button: notices that ask stay, and discreet mode (checkbox and text). */
+function switches() {
+  const options = (core.host!.children[0] as FakeElement).children[2] as FakeElement;
+  const [stay, discreet] = options.children.map((label) => (label as FakeElement).children[0] as FakeElement & { checked?: boolean });
+  /** The user ticks or clears a switch: the checkbox changes, then its change event. */
+  const set = (box: FakeElement & { checked?: boolean }, value: boolean) => {
+    box.checked = value;
+    for (const fn of box.listeners.get('change') ?? []) fn();
+  };
+  return { stay, discreet, set };
+}
 
 /** A page with notifications on, the stream's baseline sent and terminal t1 an agent (Claude Code). */
 async function live() {
@@ -332,6 +344,102 @@ async function live() {
   await settle();
   return feed!;
 }
+
+test('the view: a card notification says who waits; it stays on screen, is not discreet and reads in the interface language by default', async () => {
+  const feed = await live();
+  const { stay, discreet } = switches();
+  assert.deepEqual([stay.checked, discreet.checked], [true, false], 'the switches: stay on, discreet off');
+  feed.send([question('t1')]);
+  await settle();
+  endWindow();
+  const [notice] = FakeNotification.made;
+  assert.deepEqual([notice.title, notice.options.body], ['mi-proyecto · inbox.reason.choice', 'Which database should I use?\nClaude Code · Dev › web › mi-proyecto']);
+  assert.deepEqual(
+    [notice.options.tag, notice.options.requireInteraction, notice.options.lang, notice.options.timestamp, notice.options.icon],
+    [`mirador-inbox:t1:${T0}`, true, 'en', Date.parse(T0), '/notify-icon.png'],
+  );
+
+  feed.send([question('t1'), card('t2', 'error', T1)]);
+  await settle();
+  core.lang = 'es';
+  endWindow();
+  const [, error] = FakeNotification.made;
+  assert.deepEqual([error.title, error.options.body, error.options.requireInteraction, error.options.lang], ['api · inbox.reason.error', 'Dev › api', false, 'es'], 'no terminal here: only the path; an error does not stay; the language at the end of the window');
+});
+
+test('the view: discreet mode, ticked inside the window, hides the project, question, path and agent; the choice is kept', async () => {
+  const feed = await live();
+  feed.send([question('t1')]);
+  await settle();
+  const { discreet } = switches();
+  switches().set(discreet, true);
+  assert.equal(stored.get('inboxNotifyDiscreet'), true);
+  endWindow();
+  const [notice] = FakeNotification.made;
+  assert.deepEqual([notice.title, notice.options.body, notice.options.requireInteraction], ['An agent is waiting for you', '', true]);
+  assert.doesNotMatch(JSON.stringify([notice.title, notice.options]), /mi-proyecto|database|Dev|web|Claude/);
+  feed.send([question('t1')]); // a re-render reads the stored choice back
+  await settle();
+  assert.equal(switches().discreet.checked, true);
+});
+
+test('the view: the stay switch turned off makes a blocked card leave like any other; the choice is kept', async () => {
+  const feed = await live();
+  const { stay, set } = switches();
+  set(stay, false);
+  assert.equal(stored.get('inboxNotifyStay'), false);
+  feed.send([question('t1')]);
+  await settle();
+  assert.equal(switches().stay.checked, false, 'the re-render reads it back');
+  endWindow();
+  assert.equal(FakeNotification.made[0].options.requireInteraction, false);
+  set(stay, true);
+  assert.equal(stored.get('inboxNotifyStay'), true);
+});
+
+test('the view: 3 cards in 3 stream messages within the window give one notification; its click opens the inbox (desktop)', async () => {
+  const feed = await live();
+  const showPanel = doc.createElement('button');
+  showPanel.offsetParent = doc.body;
+  const inboxView = doc.createElement('button');
+  const clicks: string[] = [];
+  showPanel.addEventListener('click', () => clicks.push('panel'));
+  inboxView.addEventListener('click', () => clicks.push('inbox'));
+  doc.found.set('.side-show[data-side="panel"]', showPanel);
+  doc.found.set('[data-slot="panel-views"] [data-view="inbox"]', inboxView);
+  const burst = [question('t1'), question('t2', 'api'), question('t3', '')];
+  feed.send(burst.slice(0, 1));
+  feed.send(burst.slice(0, 2));
+  feed.send(burst);
+  await settle();
+  assert.equal(FakeNotification.made.length, 0, 'nothing before the window ends');
+  endWindow();
+  assert.equal(FakeNotification.made.length, 1);
+  const [group] = FakeNotification.made;
+  assert.deepEqual([group.title, group.options.body, group.options.tag, group.options.requireInteraction, group.options.lang], ['3 agents are waiting for you', 'mi-proyecto, api, Dev', 'mirador-inbox:group', true, 'en']);
+  group.onclick!();
+  assert.deepEqual([focused, clicks, core.activated, group.closed], [['window'], ['panel', 'inbox'], [], 1]);
+});
+
+test('the view: on the phone a burst reads in Spanish and its click opens the full-screen inbox', async () => {
+  const feed = await live();
+  const toInbox = doc.createElement('button');
+  const clicks: string[] = [];
+  toInbox.addEventListener('click', () => clicks.push('phone-to-inbox'));
+  doc.found.set('#phone-to-inbox', toInbox);
+  const inboxView = doc.createElement('button');
+  inboxView.addEventListener('click', () => clicks.push('panel inbox'));
+  doc.found.set('[data-slot="panel-views"] [data-view="inbox"]', inboxView);
+  core.handlers.get('phone')!('deck');
+  core.lang = 'es';
+  feed.send([question('t1'), question('t2', 'api'), question('t3', 'docs')]);
+  await settle();
+  endWindow();
+  const [group] = FakeNotification.made;
+  assert.deepEqual([group.title, group.options.lang], ['3 agentes te esperan', 'es']);
+  group.onclick!();
+  assert.deepEqual(clicks, ['phone-to-inbox']);
+});
 
 test('the view: a card the user opens before the window ends, or notifications turned off inside it, show nothing', async () => {
   const feed = await live();

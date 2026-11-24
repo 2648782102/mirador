@@ -23,7 +23,7 @@ Which database should the migration use?
 Claude Code · Dev › web › mi-proyecto
 ```
 
-Text from the agent or the disk shows as one line: line breaks and control characters become spaces and it is cut to 120 characters with `…`. Each notification also carries the interface language (`lang`) and the time the wait started (`timestamp`).
+Text from the agent or the disk shows as one line: line breaks and control characters become spaces, invisible format characters (zero-width marks, bidirectional marks, the soft hyphen, tag characters) are dropped, except the zero-width joiner that builds emoji, and it is cut to 120 characters with `…`. Each notification also carries the interface language (`lang`) and the time the wait started (`timestamp`).
 
 A card that asks something of you (a blocker or a dialog) stays on screen until you act on it (`requireInteraction`); an error leaves when the browser hides it, as before. Two switches sit beside the button while notifications can be used, each kept in this browser's `localStorage`: **Los avisos que piden respuesta se quedan hasta que actúes / Notices that need an answer stay until you act** (`mirador.inboxNotifyStay`, on by default; off, every notification leaves when the browser hides it) and **Discretos: sin proyecto ni pregunta, para compartir pantalla / Discreet: no project or question, for screen sharing** (`mirador.inboxNotifyDiscreet`, off by default). Discreet mode is for sharing your screen: a card's title is only **Un agente te espera / An agent is waiting for you**, with an empty body, so no project, question, agent or path shows.
 

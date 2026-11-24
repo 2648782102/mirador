@@ -53,6 +53,23 @@ test('agent text is one line: no line breaks or control characters, cut at 120 c
   assert.equal(shown.options.body.split('\n').length, 2);
 });
 
+test('agent text drops every format character but the joiner', () => {
+  // Arabic letter mark, soft hyphen, a tag character: invisible marks an agent could hide text with.
+  assert.equal(agentText('a\u061Cb\u00ADc\u{E0041}d'), 'abcd');
+  assert.equal(agentText('x\u{E0001}\u{E0000}\u{E007F}y\u200B\u2066z\uFEFF'), 'xyz');
+  assert.equal(agentText('\u{1F468}\u200D\u{1F469}'), '\u{1F468}\u200D\u{1F469}', 'the zero-width joiner builds emoji');
+  assert.equal(agentText('one\ntwo\u2029three'), 'one two three', 'line breaks still read as spaces');
+});
+
+test('discreet mode without its title text (waiting) does not throw: the English title stands in', () => {
+  const card = item('t1', 'blocked', { detail: 'Delete the secret branch?' });
+  const shown = cardNotification(card, { reason: 'Needs you to choose', workspace: 'Dev', agent: 'Claude Code', discreet: true });
+  assert.deepEqual([shown.title, shown.options.body, shown.options.requireInteraction], ['An agent is waiting for you', '', true]);
+  assert.doesNotMatch(JSON.stringify(shown), /mi-proyecto|secret|Dev|Claude|choose/);
+  const entries = ['t1', 't2', 't3'].map((id) => ({ item: item(id, 'blocked'), workspace: 'Dev' }));
+  assert.equal(groupNotification(entries, { discreet: true } as any).title, '3 agents are waiting for you');
+});
+
 test('the interaction switch: off, no card stays on screen by itself', () => {
   for (const kind of ['blocked', 'prompt', 'error']) {
     assert.equal(cardNotification(item('t1', kind), text({ stay: false })).options.requireInteraction, false, kind);

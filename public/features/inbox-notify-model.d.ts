@@ -17,7 +17,7 @@ export interface NotifyCard {
 /** localStorage keys (core.js prefs): notices that ask stay on screen (default on); discreet mode (default off). */
 export const NOTIFY_STAY_PREF: 'inboxNotifyStay';
 export const NOTIFY_DISCREET_PREF: 'inboxNotifyDiscreet';
-/** New cards in one stream message from which one notification stands for all of them. */
+/** New cards within the page's window from which one notification stands for all of them. */
 export const GROUP_AT: 3;
 /** The burst notification's tag. */
 export const GROUP_TAG: 'mirador-inbox:group';
@@ -30,7 +30,7 @@ export interface NotifyWords {
   stay?: boolean;
   /** No project, question or path (default false). */
   discreet?: boolean;
-  /** "An agent is waiting for you" / "{count} agents are waiting for you". */
+  /** "An agent is waiting for you" / "{count} agents are waiting for you" (English without it). */
   waiting?: (count: number) => string;
 }
 
@@ -57,7 +57,7 @@ export interface NotifyText {
   options: NotifyOptions;
 }
 
-/** One line of agent text: no line breaks or control characters, cut to `max` (120) characters. */
+/** One line of agent text: no line breaks, control or format characters (the zero-width joiner stays), cut to `max` (120) characters. */
 export function agentText(text: unknown, max?: number): string;
 /** A blocker or a dialog asks something of the user. */
 export function asksYou(item: { kind?: unknown }): boolean;
