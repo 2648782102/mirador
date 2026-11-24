@@ -31,6 +31,7 @@ const STUBS: Record<string, string> = {
     export const activeTerminalId = () => C.active;
     export const markWaiting = () => {};
     export const terminalList = () => C.terminals;
+    export const adoptTerminals = () => C.adopt();
   `),
   '/icons.js': stub('export const icon = () => null;'),
 };
@@ -137,6 +138,8 @@ const core = {
     for (const child of children.flat()) if (child !== null && child !== undefined) node.append(child as FakeElement | string);
     return node;
   },
+  /** terminals.js adoptTerminals: reads the server's list; a test sets what it brings. */
+  adopt: async () => {},
   api: async (_method: string, path: string) => (path === '/api/agents' ? { agents: [{ id: 'claude', label: 'Claude Code' }] } : {}),
   lang: 'en',
   /** The active terminal (terminals.js activeTerminalId). */
@@ -477,4 +480,28 @@ test('the view: a browser that refuses the notification when the window ends: th
   endWindow();
   const { button, status } = control();
   assert.deepEqual([status.textContent, button.hidden], ['inbox.notify.status.unsupported', true]);
+});
+
+/** Every element under `node` whose class list holds `name`. */
+const withClass = (node: FakeElement, name: string): FakeElement[] =>
+  node.children.flatMap((child) => (typeof child === 'string' ? [] : [...(child.className.split(' ').includes(name) ? [child] : []), ...withClass(child, name)]));
+
+test('a card whose terminal this window lacks reads the terminal list and opens it once it came; still absent, nothing opens', async () => {
+  const { feed } = await boot({ stream: true });
+  feed!.send([card('t9', 'blocked', T0)]);
+  await settle();
+  const [elsewhere] = withClass(core.host!, 'elsewhere');
+  assert.ok(elsewhere, 'the card says its terminal is elsewhere');
+  core.adopt = async () => { core.terminals = [{ id: 't9' }]; };
+  elsewhere.click();
+  await settle();
+  assert.deepEqual(core.activated, ['t9'], 'read, then opened');
+  core.terminals = [];
+  feed!.send([card('t8', 'blocked', T1)]);
+  await settle();
+  core.adopt = async () => {};
+  withClass(core.host!, 'elsewhere')[0].click();
+  await settle();
+  assert.deepEqual(core.activated, ['t9'], 'the list did not bring it: nothing opens');
+  core.adopt = async () => {};
 });

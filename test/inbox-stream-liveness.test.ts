@@ -37,6 +37,7 @@ const STUBS: Record<string, string> = {
     export const activeTerminalId = () => null;
     export const markWaiting = () => {};
     export const terminalList = () => [];
+    export const adoptTerminals = async () => {};
   `),
   '/icons.js': stub('export const icon = () => null;'),
 };

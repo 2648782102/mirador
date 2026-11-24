@@ -4,7 +4,8 @@
 // stand-in, a fake xterm and a fake API, trimmed from test/tab-agent-icon.test.ts. An agent put to
 // sleep ({t:'c', reason:'sleep'}) leaves the same way, and features/sleeping.js says so for about 8 s.
 // The same page also checks that typing or clicking in a terminal takes its size back from another
-// window (a phone) that took it while this one kept the focus.
+// window (a phone) that took it while this one kept the focus, and that a terminal opened in another
+// window after this page loaded joins it as a tab.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
@@ -198,7 +199,9 @@ class FakeDocument {
   getElementById(id: string) { return this.documentElement.querySelector(`#${id}`); }
   querySelector(selector: string) { return this.documentElement.querySelector(selector); }
   querySelectorAll(selector: string) { return this.documentElement.querySelectorAll(selector); }
-  addEventListener() {}
+  /** Listeners on the document, last boot last: `visibilitychange` reads the terminal list again. */
+  listeners: Array<[string, () => void]> = [];
+  addEventListener(type: string, listener: () => void) { this.listeners.push([type, listener]); }
 }
 
 /** The sockets terminals.js opened, to play the server's messages. */
@@ -254,7 +257,9 @@ async function boot(running: object[]) {
   (globalThis as any).document = doc;
   const calls: string[] = [];
   let answer = () => {};
+  let reads = 0;
   (globalThis as any).fetch = async (path: string, { method }: { method: string }) => {
+    if (method === 'GET' && path === '/api/terminals') reads++;
     if (method === 'POST') calls.push(`${method} ${path}`);
     if (method === 'DELETE') {
       calls.push(`${method} ${path}`);
@@ -267,7 +272,18 @@ async function boot(running: object[]) {
   core.state.config = { mode: 'plain', agentCommand: 'bash' };
   core.state.workspaces = [{ id: 'dev', name: 'Dev', path: '/home/you/Dev' }];
   const terminals = await import(`${new URL('terminals.js', publicDir).href}?boot=${++boots}`);
-  await terminals.initTerminals();
+  // The `inbox` handler of this boot alone: the modules of earlier boots still listen on the bus.
+  const inboxHandlers: Array<(event: Event) => void> = [];
+  const add = EventTarget.prototype.addEventListener;
+  EventTarget.prototype.addEventListener = function (this: EventTarget, type: string, listener: any, options?: any) {
+    if (type === 'inbox') inboxHandlers.push(listener);
+    return add.call(this, type, listener, options);
+  };
+  try {
+    await terminals.initTerminals();
+  } finally {
+    EventTarget.prototype.addEventListener = add;
+  }
   const lists: string[][] = [];
   const activated: string[] = [];
   const stops = [core.on('terminals', (list: Array<{ id: string }>) => lists.push(list.map((t) => t.id))), core.on('activate', (id: string) => activated.push(id))];
@@ -289,6 +305,13 @@ async function boot(running: object[]) {
     active: () => doc.querySelectorAll('#panes .active').map((pane) => pane.getAttribute('data-terminal-id')),
     lines: () => doc.querySelectorAll('[data-slot="alerts"] .slept-line'),
     pane: (id: string) => doc.querySelector(`#panes [data-terminal-id="${id}"]`)!,
+    /** How many times GET /api/terminals was read, the boot's own read included. */
+    reads: () => reads,
+    /** The page shows again (visibilitychange to visible). */
+    shown: () => doc.listeners.filter(([type]) => type === 'visibilitychange').forEach(([, listener]) => listener()),
+    ids: () => terminals.terminalList().map((t: { id: string }) => t.id),
+    /** An inbox snapshot, to this boot's terminals.js only. */
+    inbox: (items: unknown[]) => inboxHandlers.forEach((handler) => handler(new CustomEvent('inbox', { detail: items }))),
   };
 }
 
@@ -457,5 +480,50 @@ test('kept: the window taking the focus back resends the size of every shown ter
   focus();
   assert.deepEqual(shown.sent, [{ t: 'r', c: 80, r: 24 }]);
   assert.deepEqual(hidden.sent, []);
+  page.stop();
+});
+
+const settled = async () => { for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve)); };
+
+test('a terminal opened in another window after this page loaded joins as a tab when the inbox names it, with one read and no activation', async () => {
+  const running = [info('t-a')];
+  const page = await boot(running);
+  page.terminals.activateTerminal('t-a');
+  page.lists.length = page.activated.length = 0;
+  const before = page.reads();
+  running.push(info('t-new'), { ...info('t-git'), kind: 'git' });
+  const items = [{ terminalId: 't-new' }, { terminalId: 't-git' }];
+  page.inbox(items);
+  page.inbox(items); // a second snapshot while the read is on its way
+  await settled();
+  assert.deepEqual(page.ids(), ['t-a', 't-new'], 'the new terminal is a tab; the git one is not');
+  assert.equal(page.nodes('t-git'), 0);
+  assert.deepEqual(page.active(), ['t-a'], 'the terminal on screen stays');
+  assert.deepEqual(page.activated, []);
+  assert.deepEqual(page.lists, [['t-a', 't-new']], '`terminals` once, with the new one');
+  assert.equal(page.reads() - before, 1, 'one read for both snapshots');
+  page.inbox(items);
+  await settled();
+  assert.equal(page.reads() - before, 1, 'later snapshots naming the git terminal read nothing more');
+  page.stop();
+});
+
+test('the page shown again reads the list: a terminal with no card yet joins; one closed while the read was on its way does not come back', async () => {
+  const running = [info('t-a'), info('t-b')];
+  const page = await boot(running);
+  page.terminals.activateTerminal('t-a');
+  running.push(info('t-c'));
+  page.shown();
+  page.socket('t-b').receive({ t: 'c' }); // closed elsewhere; the answer on its way still lists it
+  await settled();
+  assert.deepEqual(page.ids(), ['t-a', 't-c']);
+  assert.deepEqual(page.active(), ['t-a']);
+  running.splice(1, 1); // the server forgot it too
+  // Nothing new: the list is read and nothing changes.
+  page.lists.length = 0;
+  page.shown();
+  await settled();
+  assert.deepEqual(page.ids(), ['t-a', 't-c']);
+  assert.deepEqual(page.lists, [], 'no `terminals` when nothing joined');
   page.stop();
 });

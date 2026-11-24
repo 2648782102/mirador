@@ -23,7 +23,7 @@ import { withSleepingGroups } from '/features/sleeping-model.js';
 import { terminalBody } from '/features/agent-picker-model.js';
 import { inputRetakeDue, returningSizes } from '/terminal-size.js';
 import { paneStatus } from '/pane-status-model.js';
-import { showsAsTab } from '/terminal-kind-model.js';
+import { showsAsTab, unknownTerminalIds } from '/terminal-kind-model.js';
 import { matches, normalizeSelection, paneToShow, showsTerminal } from '/features/state-filter-model.js';
 import { fileChecker, findFileLinks, linkRange, openableFiles, splitPath } from '/features/file-links-model.js';
 import { revealRequest } from '/features/tree-reveal-model.js';
@@ -876,6 +876,34 @@ export function newTerminalSize() {
   return probe ? { cols: probe.term.cols, rows: probe.term.rows } : { cols: 120, rows: 32 };
 }
 
+/** The read of the server's terminal list on its way (adoptTerminals), or null. */
+let adopting = null;
+/** Ids dropped here while that read was on its way: its answer may still name them. */
+const droppedWhileAdopting = new Set();
+/** Ids a read already went for (named by the inbox): they never cause another read. */
+const askedFor = new Set();
+
+/**
+ * Mounts the terminals the server runs that this window lacks (opened in another window after
+ * this page loaded) without moving the activation; a git terminal stays out, as on a reload. One
+ * read at a time; resolves when it is done, a failed read changing nothing.
+ */
+export function adoptTerminals() {
+  if (adopting) return adopting;
+  droppedWhileAdopting.clear();
+  adopting = api('GET', '/api/terminals')
+    .then((infos) => {
+      const joined = infos.filter((info) => showsAsTab(info) && !terminals.has(info.id) && !droppedWhileAdopting.has(info.id));
+      joined.forEach(mountTerminal);
+      if (!joined.length) return;
+      applyLayout();
+      emit('terminals', terminalList());
+    })
+    .catch(() => {})
+    .finally(() => { adopting = null; });
+  return adopting;
+}
+
 /** Shows terminals the server just opened (TerminalInfo list) and activates the last one. */
 export function showOpenedTerminals(infos) {
   infos = infos.filter(showsAsTab);
@@ -933,6 +961,7 @@ export async function closeTerminal(id) {
 function dropTerminal(id, record = terminals.get(id), activate = true) {
   if (!record || terminals.get(id) !== record) return false;
   terminals.delete(id);
+  if (adopting) droppedWhileAdopting.add(id);
   activations.delete(id);
   record.ws?.close();
   record.term.dispose();
@@ -965,6 +994,10 @@ export async function initTerminals() {
     terminals.forEach(paintState);
     // The states changed: the filter may now hide or show terminals.
     if (stateFilter.length) applyLayout();
+    // A terminal opened in another window after this page loaded: read the list once for it.
+    const unknown = unknownTerminalIds(items, new Set([...terminals.keys(), ...askedFor]));
+    unknown.forEach((id) => askedFor.add(id));
+    if (unknown.length) adoptTerminals();
   });
   on('theme', () => {
     const theme = xtermTheme();
@@ -992,7 +1025,12 @@ export async function initTerminals() {
   $('#filter-empty-all').addEventListener('click', () => showAllStates?.());
   document.addEventListener('keydown', moveByKeyboard, true);
   window.addEventListener('focus', retakeSizes);
-  document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && retakeSizes());
+  // Shown again: retake the sizes, and read the terminals opened elsewhere meanwhile (with or without a card).
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    retakeSizes();
+    adoptTerminals();
+  });
   watchPanesWidth();
   applyLayout();
   // The agents first, so a restored tab shows its agent at once; a failed read leaves the configured
