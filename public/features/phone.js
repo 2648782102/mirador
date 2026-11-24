@@ -10,21 +10,32 @@ import { $, el, emit, on, t, workspaceById } from '/core.js';
 import { icon } from '/icons.js';
 import { closeDrawer } from '/features/drawers.js';
 import { inboxStream } from '/features/inbox.js';
-import { KEY_BAR, PHONE_QUERY, inboxHeader, nextView } from '/features/phone-model.js';
-import { refitAll, terminalList, typeKey } from '/terminals.js';
+import { KEY_BAR, PHONE_QUERY, inboxHeader, nextView, screenTerminal, shownClosed } from '/features/phone-model.js';
+import { activeTerminalId, refitAll, terminalList, typeKey } from '/terminals.js';
 
 let media = null;
 let view = null;
 /** The inbox items (the `inbox` event) and the stream's state (the `inbox:stream` event). */
 let items = [];
 let stream = 'reconnecting';
-/** The terminal a card opened, which the terminal view shows and the key bar types into. */
-let openId = null;
 /** The nodes whose text follows the language, the count and the stream. */
 let ui = null;
 
 /** A back control's arrow: the sprite's one chevron, mirrored (styles/phone.css). */
 const backIcon = () => icon('chev-right');
+
+/**
+ * The terminal on screen in the terminal view, which its header names and the key bar types into:
+ * the active one, whatever activated it (phone-model.js screenTerminal), or null.
+ */
+const shownId = () => screenTerminal(view, activeTerminalId(), terminalList());
+
+/**
+ * What shownId answered when the terminal view opened or another terminal was activated in it. Not
+ * what is on screen (shownId says that): only how its close is told from an activation, since
+ * closeTerminal activates the next terminal before the list drops the closed one (L3).
+ */
+let lastShown = null;
 
 /**
  * Moves to the phone view `action` leads to (phone-model.js nextView); `focus` is where the
@@ -38,7 +49,7 @@ function go(action, { focus = null } = {}) {
   else delete document.body.dataset.phone;
   // The inbox and the terminal cover the page: no drawer stays open (and inert) behind them.
   if (view === 'inbox' || view === 'terminal') closeDrawer();
-  if (!view) openId = null;
+  if (view !== 'terminal') lastShown = null;
   paint();
   emit('phone', view);
   refitAll();
@@ -65,16 +76,23 @@ function build() {
   // A press on a key keeps the focus where it is (mousedown), so an open soft keyboard stays open
   // and a closed one is not raised; the click types the key.
   const keys = KEY_BAR.map(({ key, caption, labelKey }) =>
-    el('button', { type: 'button', class: 'btn phone-key', 'data-key': key, 'data-label': labelKey, translate: 'no', onmousedown: (event) => event.preventDefault(), onclick: () => openId && typeKey(openId, key) }, caption),
+    el('button', { type: 'button', class: 'btn phone-key', 'data-key': key, 'data-label': labelKey, translate: 'no', onmousedown: (event) => event.preventDefault(), onclick: () => typeOnScreen(key) }, caption),
   );
   $('#phone-keys').replaceChildren(...keys);
 
   ui = { inboxBack, title, state, full, fullHint, toInbox, termBack, termTitle, keys };
 }
 
-/** "title · workspace › folder" of the open terminal, or nothing once it is gone. */
+/** Types `key` into the terminal on screen; with none, nothing. */
+function typeOnScreen(key) {
+  const id = shownId();
+  if (id) typeKey(id, key);
+}
+
+/** "title · workspace › folder" of the terminal on screen, or nothing without one. */
 function terminalLabel() {
-  const info = terminalList().find((terminal) => terminal.id === openId);
+  const id = shownId();
+  const info = id && terminalList().find((terminal) => terminal.id === id);
   if (!info) return '';
   const workspace = workspaceById(info.workspaceId)?.name ?? info.workspaceId;
   return `${info.title} · ${info.rel ? `${workspace} › ${info.rel.split('/').join(' › ')}` : workspace}`;
@@ -108,15 +126,23 @@ export async function init() {
     stream = next;
     paint();
   });
-  // A card was tapped (features/inbox.js openCard): its terminal, full-screen.
-  on('inbox:open', (id) => {
-    openId = id;
+  // A card was tapped (features/inbox.js openCard, which activated its terminal): it, full-screen.
+  on('inbox:open', () => {
     go('open', { focus: '#phone-term-title' });
+    lastShown = shownId();
     paint();
   });
-  // The open terminal closed (here or in another window): back to the inbox.
-  on('terminals', (list) => {
-    if (view === 'terminal' && !list.some((info) => info.id === openId)) go('gone', { focus: '#phone-inbox-title' });
+  // Another terminal came on screen (a notification click, any `activate`): the header and the keys
+  // follow it. Unless the one shown was closed and this is the next one closeTerminal activated:
+  // back to the inbox (L3).
+  on('activate', () => {
+    if (view === 'terminal' && shownClosed(lastShown, terminalList())) return go('gone', { focus: '#phone-inbox-title' });
+    lastShown = shownId();
+    paint();
+  });
+  // The terminal on screen closed (here or in another window): back to the inbox.
+  on('terminals', () => {
+    if (view === 'terminal' && !shownId()) go('gone', { focus: '#phone-inbox-title' });
     else paint();
   });
   on('language', paint);
