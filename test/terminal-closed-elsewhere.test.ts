@@ -1,7 +1,8 @@
 // A terminal closed in another window leaves this one too: the server tells every socket attached
 // to it ({t:'c'}, src/server.ts) and public/terminals.js drops it in the order its own × does,
 // without asking the server to close it again. The real terminals.js runs in Node on a DOM
-// stand-in, a fake xterm and a fake API, trimmed from test/tab-agent-icon.test.ts.
+// stand-in, a fake xterm and a fake API, trimmed from test/tab-agent-icon.test.ts. An agent put to
+// sleep ({t:'c', reason:'sleep'}) leaves the same way, and features/sleeping.js says so for about 8 s.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
@@ -145,8 +146,10 @@ class FakeElement {
     child.parentNode = null;
   }
   remove() { this.parentNode?.removeChild(this); }
-  addEventListener() {}
+  listeners = new Map<string, Array<() => void>>();
+  addEventListener(type: string, listener: () => void) { this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]); }
   removeEventListener() {}
+  click() { for (const listener of this.listeners.get('click') ?? []) listener(); }
   focus() {}
   scrollIntoView() {}
   getBoundingClientRect() { return { left: 0, width: 0 }; }
@@ -178,7 +181,9 @@ class FakeDocument {
     };
     const panes = html('div', 'panes');
     panes.append(html('div', 'empty-state'));
-    this.body.append(html('div', 'tabs'), panes, html('p', 'empty-hint'), html('div', 'filter-empty'), html('button', 'filter-empty-all'));
+    const alerts = new FakeElement('div');
+    alerts.setAttribute('data-slot', 'alerts');
+    this.body.append(alerts, html('div', 'tabs'), panes, html('p', 'empty-hint'), html('div', 'filter-empty'), html('button', 'filter-empty-all'));
   }
   get children() { return [this.documentElement]; }
   get activeElement() { return this.body; }
@@ -218,6 +223,10 @@ Object.assign(globalThis, {
 });
 (globalThis as any).document = new FakeDocument();
 const core = await import(new URL('core.js', publicDir).href);
+const { translate } = await import(new URL('i18n.js', publicDir).href);
+// The line an agent put to sleep leaves: features/sleeping.js init() wires the same listener.
+const sleeping = await import(new URL('features/sleeping.js', publicDir).href);
+core.on('slept', sleeping.showSlept);
 
 let boots = 0;
 const info = (id: string, status = 'running') => ({ id, kind: 'shell', workspaceId: 'dev', rel: '', cwd: '/home/you/Dev', title: id, status, createdAt: '2026-11-24T12:00:00Z' });
@@ -232,6 +241,7 @@ async function boot(running: object[]) {
   const calls: string[] = [];
   let answer = () => {};
   (globalThis as any).fetch = async (path: string, { method }: { method: string }) => {
+    if (method === 'POST') calls.push(`${method} ${path}`);
     if (method === 'DELETE') {
       calls.push(`${method} ${path}`);
       await new Promise<void>((resolve) => (answer = resolve));
@@ -257,6 +267,7 @@ async function boot(running: object[]) {
     socket: (id: string) => sockets.findLast((s) => s.url.endsWith(`/${id}`))!,
     nodes: (id: string) => doc.querySelectorAll(`[data-terminal-id="${id}"]`).length,
     active: () => doc.querySelectorAll('#panes .active').map((pane) => pane.getAttribute('data-terminal-id')),
+    lines: () => doc.querySelectorAll('[data-slot="alerts"] .slept-line'),
   };
 }
 
@@ -272,6 +283,7 @@ test('a terminal closed in another window drops its tab and pane here, activates
   assert.deepEqual(page.activated, ['t-c']);
   assert.deepEqual(page.lists, [['t-b', 't-c']], '`terminals` once, after the activation, without it');
   assert.deepEqual(page.calls, [], 'no DELETE back to the server');
+  assert.deepEqual(page.lines(), [], 'closed by hand elsewhere: no line');
   // One not on screen: it goes, the active one stays.
   page.socket('t-b').receive({ t: 'c' });
   assert.equal(page.nodes('t-b'), 0);
@@ -301,6 +313,9 @@ test('closed with this window\'s own ×: the close message arriving before or af
   page.socket('t-b').receive({ t: 'c' });
   assert.deepEqual(page.lists.at(-1), ['t-c']);
   assert.deepEqual([page.lists.length, page.activated.length], [before.lists + 1, before.activated + 1]);
+  // Even a late sleep message for a tab its own × closed says nothing.
+  page.socket('t-b').receive({ t: 'c', reason: 'sleep' });
+  assert.deepEqual(page.lines(), [], 'no line for this window\'s own ×');
   page.stop();
 });
 
@@ -310,5 +325,45 @@ test('kept: an exit still marks the terminal exited and keeps its tab', async ()
   assert.equal(page.nodes('t-a'), 2, 'tab and pane stay');
   assert.deepEqual(page.terminals.terminalList().map((t: { id: string; status: string }) => [t.id, t.status]), [['t-a', 'exited'], ['t-b', 'running']]);
   assert.deepEqual(page.calls, []);
+  page.stop();
+});
+
+test('put to sleep: the tab leaves as when closed elsewhere, and one role=status line names it with Despertar for about 8 s; a newer one replaces it', async (t) => {
+  const page = await boot([{ ...info('t-a'), kind: 'agent', rel: 'mi-proyecto' }, { ...info('t-b'), kind: 'agent' }, info('t-c')]);
+  page.terminals.activateTerminal('t-a');
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  page.socket('t-a').receive({ t: 'c', reason: 'sleep' });
+  assert.equal(page.nodes('t-a'), 0, 'its tab and pane are gone');
+  assert.deepEqual(page.lists, [['t-b', 't-c']]);
+  assert.deepEqual(page.calls, []);
+  const [line, ...more] = page.lines();
+  assert.equal(more.length, 0);
+  assert.equal(line.getAttribute('role'), 'status');
+  assert.equal(line.closest('dialog'), null, 'not modal');
+  assert.equal(line.textContent, core.t('sleeping.slept', { name: 'mi-proyecto' }) + core.t('sleeping.wake'));
+  assert.equal(translate('es', 'sleeping.slept', { name: 'mi-proyecto' }), '«mi-proyecto» se durmió · está en Dormidos');
+  assert.equal(line.querySelector('button')!.textContent, core.t('sleeping.wake'));
+  t.mock.timers.tick(5000);
+  // Another one sleeps: its line replaces the first, named as the sleeping dialog names it (no folder: the workspace).
+  page.socket('t-b').receive({ t: 'c', reason: 'sleep' });
+  const [second, ...others] = page.lines();
+  assert.equal(others.length, 0, 'one line at a time');
+  assert.equal(second.textContent, core.t('sleeping.slept', { name: 'Dev' }) + core.t('sleeping.wake'));
+  t.mock.timers.tick(5000);
+  assert.equal(page.lines().length, 1, 'the newer line keeps its own 8 s');
+  t.mock.timers.tick(3000);
+  assert.deepEqual(page.lines(), [], 'gone after about 8 s');
+  page.stop();
+});
+
+test('Despertar on that line wakes the sleeping agent by its terminal id and the line goes', async (t) => {
+  const page = await boot([{ ...info('t-a'), kind: 'agent', rel: 'mi-proyecto' }, info('t-b')]);
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  page.socket('t-a').receive({ t: 'c', reason: 'sleep' });
+  page.lines()[0].querySelector('button')!.click();
+  assert.deepEqual(page.lines(), []);
+  t.mock.timers.reset();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepEqual(page.calls, ['POST /api/terminals/sleeping/t-a/wake']);
   page.stop();
 });

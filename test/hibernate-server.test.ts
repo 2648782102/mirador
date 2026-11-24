@@ -9,9 +9,12 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:http';
 import { createConnection, type Socket } from 'node:net';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { scratchBase } from './helpers/scratch.ts';
+
+const WebSocket = createRequire(import.meta.url)('ws');
 
 const APP_DIR = fileURLToPath(new URL('..', import.meta.url));
 
@@ -43,7 +46,7 @@ async function waitFor<T>(check: () => Promise<T | undefined>, ms = 30_000): Pro
   throw new Error(`timed out; server output:\n${output}`);
 }
 
-/** Starts the server and logs in; resolves with an API helper. */
+/** Starts the server and logs in; resolves with an API helper, which carries its session token. */
 async function start() {
   output = '';
   server = spawn(process.execPath, ['src/server.ts'], {
@@ -67,11 +70,11 @@ async function start() {
   const nonce = new URL(((await boot.json()) as { url: string }).url).hash.replace('#launch=', '');
   const session = await fetch(`${base}/api/session`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ nonce }) });
   const token = ((await session.json()) as { token: string }).token;
-  return async (method: string, path: string, body?: unknown) => {
+  return Object.assign(async (method: string, path: string, body?: unknown) => {
     const response = await fetch(`${base}${path}`, { method, headers: { origin: base, authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
     const text = await response.text();
     return { status: response.status, body: text ? JSON.parse(text) : null };
-  };
+  }, { token });
 }
 
 async function stop(): Promise<void> {
@@ -147,6 +150,18 @@ test('an idle agent gets the save note, and once that turn ends it sleeps, stays
   const opened = await api('POST', '/api/terminals', { ws: 'dev', rel: 'idle', kind: 'agent', cols: 90, rows: 33 });
   assert.equal(opened.status, 201);
   const id = opened.body.id as string;
+  // A window showing it: it hears why its tab leaves.
+  const ws = new WebSocket(`${base.replace('http', 'ws')}/ws/terminals/${id}`, ['mirador.v1', `auth.${api.token}`], { headers: { origin: base } });
+  const closes: unknown[] = [];
+  ws.on('message', (raw: Buffer) => {
+    const message = JSON.parse(String(raw));
+    if (message.t === 'c' || message.t === 'x') closes.push(message);
+  });
+  const ended = new Promise((resolve) => ws.on('close', resolve));
+  await new Promise((resolve, reject) => {
+    ws.on('open', resolve);
+    ws.on('error', reject);
+  });
   const sessionFile = join(scratch, 'idle-session.jsonl');
   await writeFile(sessionFile, '{}\n');
   const { socket, messages } = await bridge(id, sessionFile);
@@ -169,6 +184,8 @@ test('an idle agent gets the save note, and once that turn ends it sleeps, stays
   const asleep = (await api('GET', '/api/terminals/sleeping')).body.agents as Array<{ id: string; rel: string; resumable: boolean }>;
   assert.deepEqual(asleep.map((a) => [a.id, a.rel, a.resumable]), [[id, 'idle', true]]);
   assert.match(output, /mirador: the open agent of workspace "dev" folder "idle" sleeps/);
+  assert.equal(await ended, 1000, 'the server closed the window\'s socket');
+  assert.deepEqual(closes, [{ t: 'c', reason: 'sleep' }], 'the window heard that it went to sleep, and no exit');
   socket.destroy();
 
   await stop();
