@@ -350,6 +350,8 @@ function mountTerminal(info) {
       if (stateFilter.length) applyLayout();
       emit('terminals', terminalList());
     },
+    // Closed in another window (or put to sleep): it leaves this one as its own × does.
+    closed: () => dropTerminal(info.id),
     kept: () => terminals.has(info.id),
   });
 }
@@ -358,7 +360,8 @@ function mountTerminal(info) {
  * Opens an xterm for `info` in `body` (inside `pane`, which must be in the document and is what
  * refit measures) and attaches it to the terminal's WebSocket. `hooks`: created(record) once the
  * record exists, status(record) when its info changes, exited(record) after the exit line is
- * written, kept() whether a closed socket still belongs to a shown terminal. Returns the record.
+ * written, closed(record) when the server says the terminal was closed (by any window), kept()
+ * whether a closed socket still belongs to a shown terminal. Returns the record.
  */
 export function connectTerminal(info, pane, body, hooks) {
   const term = new Terminal({
@@ -428,6 +431,8 @@ export function connectTerminal(info, pane, body, hooks) {
       hooks.status?.(record);
       term.write(`\r\n\x1b[2m${exitLabels(record.info, t).line}\x1b[0m\r\n`);
       hooks.exited?.(record);
+    } else if (message.t === 'c') {
+      hooks.closed?.(record);
     }
   });
   ws.addEventListener('close', () => {
@@ -900,6 +905,16 @@ export async function closeTerminal(id) {
   } catch (error) {
     if (error.status !== 404) return showAlert(errorText(error));
   }
+  dropTerminal(id, record);
+}
+
+/**
+ * Takes terminal `id` out of this window, without asking the server: its tab and pane go, the next
+ * terminal is activated, then `terminals` is emitted without it. Nothing if it is gone already, or
+ * is no longer `record` (its own × and the server's close message both lead here).
+ */
+function dropTerminal(id, record = terminals.get(id)) {
+  if (!record || terminals.get(id) !== record) return;
   terminals.delete(id);
   activations.delete(id);
   record.ws?.close();

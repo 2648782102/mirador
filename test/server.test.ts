@@ -384,3 +384,36 @@ test('malformed or oversized WebSocket frames do not take the server down', asyn
   assert.deepEqual(list.map((t) => [t.id, t.status]), [[info.id, 'running']]);
   await api(token, 'DELETE', `/api/terminals/${info.id}`);
 });
+
+test('closing a terminal tells the sockets attached to it ({t:\'c\'}) and closes them; a socket on another terminal hears nothing', async () => {
+  const token = await login();
+  const open = async () => ((await (await api(token, 'POST', '/api/terminals', { ws: 'dev', rel: '', kind: 'shell', cols: 80, rows: 24 })).json()) as { id: string }).id;
+  const [closed, kept] = [await open(), await open()];
+  const attach = async (id: string) => {
+    const ws = new WebSocket(`${base.replace('http', 'ws')}/ws/terminals/${id}`, ['mirador.v1', `auth.${token}`], { headers: { origin } });
+    const heard: string[] = [];
+    ws.on('message', (raw: Buffer) => heard.push(JSON.parse(String(raw)).t));
+    // Its close code, or 'open' if the server left it open for 3 s.
+    const ended = new Promise<number | string>((resolve) => {
+      ws.on('close', resolve);
+      setTimeout(() => resolve('open'), 3000).unref();
+    });
+    await new Promise((resolve, reject) => {
+      ws.on('open', resolve);
+      ws.on('error', reject);
+    });
+    await waitFor(async () => (heard.includes('s') ? true : undefined));
+    return { ws, ended, others: () => heard.filter((t) => t !== 's' && t !== 'o') };
+  };
+  const [first, second, other] = [await attach(closed), await attach(closed), await attach(kept)];
+  try {
+    assert.equal((await api(token, 'DELETE', `/api/terminals/${closed}`)).status, 204);
+    assert.deepEqual([await first.ended, await second.ended], [1000, 1000], 'the server closed both sockets of the closed terminal');
+    assert.deepEqual([first.others(), second.others()], [['c'], ['c']], 'each heard the close once, and no exit');
+    assert.deepEqual(other.others(), [], 'the other terminal\'s socket heard nothing');
+    assert.equal(other.ws.readyState, WebSocket.OPEN);
+  } finally {
+    for (const { ws } of [first, second, other]) ws.terminate();
+    await api(token, 'DELETE', `/api/terminals/${kept}`);
+  }
+});

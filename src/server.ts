@@ -422,6 +422,13 @@ async function main(): Promise<void> {
       onExit: (code, info) => send({ t: 'x', code, info }),
     });
     send({ t: 's', d: attachment.scrollback, info: attachment.info });
+    // Closed (by any window, or put to sleep): every window showing it drops it too ({t:'c'}), then
+    // its socket closes. Not while Mirador stops: its windows keep the tabs and say the link is lost.
+    const unsubscribe = terminals.subscribe(({ type, info }) => {
+      if (type !== 'closed' || info.id !== id || stopping) return;
+      send({ t: 'c' });
+      ws.close(1000, 'closed');
+    });
     // Oversized or invalid frames surface here; without a listener they would crash the process.
     ws.on('error', () => ws.terminate());
     ws.on('message', (raw) => {
@@ -439,6 +446,7 @@ async function main(): Promise<void> {
     });
     ws.on('close', () => {
       unregister();
+      unsubscribe();
       attachment.detach();
     });
   }
