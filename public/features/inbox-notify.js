@@ -13,21 +13,16 @@
 // finished turn), the notification this page showed for it is closed; a later wait is a new card
 // and may notify again. After a reload the old notifications are not known and stay as they are.
 // What already waits when the page opens, or while notifications are off, is taken as known and
-// never notifies later.
+// never notifies later. A burst (GROUP_AT or more new cards in one message) shows one notification
+// for all of them, closed when the last of them leaves; what each says is inbox-notify-model.js.
+
+import { cardNotification, GROUP_AT, groupNotification } from './inbox-notify-model.js';
 
 /** The prefs key (localStorage `mirador.inboxNotify`). */
 export const NOTIFY_PREF = 'inboxNotify';
 
 /** One waiting episode: the terminal and when it started waiting (tests key what they saw by it; cards are keyed by terminal). */
 export const episodeKey = (item) => `${item.terminalId}\u0000${item.since}`;
-
-/**
- * The Mirador mark at 192 px and its white-on-transparent badge at 96 px (Android's status bar),
- * served by Mirador itself (scripts/notify-icons.sh makes both from public/icon.svg). PNG, not the
- * SVG: Firefox on Linux shows no image for an SVG icon.
- */
-const ICON = '/notify-icon.png';
-const BADGE = '/notify-badge.png';
 
 /** One card: the terminal's stay in the inbox with a blocker, a dialog or an error, whatever its since. */
 const cardKey = (item) => item.terminalId;
@@ -53,14 +48,18 @@ const notifies = (item) => item.kind !== 'finished';
  * Methods: `status()` → 'unsupported' | 'denied' | 'on' | 'off'; `toggle()` (from a click only)
  * → the new status; `receive(items, skip)` with each stream message → the items it notified,
  * `skip(item)` true for one the user is looking at (handled, never notified).
+ * - `showGroup(items)` (optional): shows one notification for a burst of GROUP_AT or more new
+ *   cards, as `show` does; without it every card gets its own.
  */
-export function createInboxNotifier({ api, read, write, show }) {
+export function createInboxNotifier({ api, read, write, show, showGroup }) {
   let enabled = read() === true;
   let broken = false;
   /** Card keys in the last message; null until the first one (the baseline). */
   let known = null;
-  /** Card key → the notification this page showed for it, closed when the card leaves. */
+  /** Card key → the notification this page showed for it, closed when its last card leaves (a burst's stands for several). */
   const open = new Map();
+  /** The last burst notification: a new burst replaces it in the browser, under the same tag. */
+  let burst = null;
   const permission = () => (api ? api.permission : 'denied');
 
   const status = () => {
@@ -98,14 +97,26 @@ export function createInboxNotifier({ api, read, write, show }) {
       for (const [key, notice] of open) {
         if (current.has(key)) continue;
         open.delete(key);
-        quietly(() => notice.close());
+        if (![...open.values()].includes(notice)) quietly(() => notice.close());
       }
       const fresh = known ? [...current].filter(([key]) => !known.has(key)).map(([, item]) => item) : [];
       known = new Set(current.keys());
       if (status() !== 'on') return [];
+      const due = fresh.filter((item) => !skip(item));
+      if (showGroup && due.length >= GROUP_AT) {
+        const notice = showGroup(due);
+        if (!notice) {
+          broken = true;
+          return [];
+        }
+        // The browser replaced the last burst's notification: closing it now could close this one.
+        for (const [key, shown] of open) if (shown === burst) open.delete(key);
+        burst = notice;
+        if (typeof notice.close === 'function') for (const item of due) open.set(cardKey(item), notice);
+        return due;
+      }
       const shown = [];
-      for (const item of fresh) {
-        if (skip(item)) continue;
+      for (const item of due) {
         const notice = show(item);
         if (!notice) {
           broken = true;
@@ -120,17 +131,12 @@ export function createInboxNotifier({ api, read, write, show }) {
 }
 
 /**
- * What one notification says: the card's reason as the title, where it is (workspace › folder, as
- * the inbox shows it) and the card's detail as the body; tagged by its card (the terminal and the
- * time the card started, as it is made when the card first waits), so a second window replaces the
- * first one's notification instead of adding another.
+ * What one notification says (inbox-notify-model.js cardNotification): who waits and why, the
+ * question and where; tagged by its card (the terminal and the time the card started, as it is
+ * made when the card first waits), so a second window replaces the first one's notification
+ * instead of adding another.
  */
-export function notificationFor(item, { reason, where }) {
-  return {
-    title: reason,
-    options: { body: item.detail ? `${where}\n${item.detail}` : where, tag: `mirador-inbox:${item.terminalId}:${item.since}`, requireInteraction: false, icon: ICON, badge: BADGE },
-  };
-}
+export const notificationFor = (item, text) => cardNotification(item, text);
 
 /**
  * Shows one card's notification with the browser's Notification class `Api` and returns it (a
@@ -147,6 +153,23 @@ export function showNotification(Api, item, text, { focus, open }) {
   notice.onclick = () => {
     quietly(focus);
     quietly(() => open(item));
+    quietly(() => notice.close());
+  };
+  return notice;
+}
+
+/**
+ * Shows the notification for a burst of new cards (`entries` as `{ item, workspace }`,
+ * inbox-notify-model.js groupNotification) and returns it; a throwing constructor is let through.
+ * A click brings Mirador forward, then `openInbox()` shows the inbox, then closes the
+ * notification; each step may throw and the click never does.
+ */
+export function showGroupNotification(Api, entries, text, { focus, openInbox }) {
+  const { title, options } = groupNotification(entries, text);
+  const notice = new Api(title, options);
+  notice.onclick = () => {
+    quietly(focus);
+    quietly(openInbox);
     quietly(() => notice.close());
   };
   return notice;

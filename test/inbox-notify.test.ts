@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createInboxNotifier, episodeKey, NOTIFY_PREF, notificationFor, showNotification } from '../public/features/inbox-notify.js';
+import { createInboxNotifier, episodeKey, NOTIFY_PREF, notificationFor, showGroupNotification, showNotification } from '../public/features/inbox-notify.js';
 
 const item = (terminalId: string, kind: string, since: string, extra: Record<string, unknown> = {}) => ({ terminalId, workspaceId: 'dev', rel: 'api', title: 'api', kind, label: 'Awaiting input', detail: null, since, activity: null, ...extra });
 const T0 = '2026-10-28T10:00:00.000Z';
@@ -129,10 +129,14 @@ test('a stored "on" with the permission reset to default reads as off until clic
   assert.equal(notifier.status(), 'off');
 });
 
-test('the notification says what the inbox card says, tagged by its episode', () => {
-  const shown = notificationFor(item('t1', 'error', T0, { detail: 'Build failed' }), { reason: 'Stopped with an error', where: 'dev › api' });
-  assert.deepEqual(shown, { title: 'Stopped with an error', options: { body: 'dev › api\nBuild failed', tag: `mirador-inbox:t1:${T0}`, requireInteraction: false, icon: '/notify-icon.png', badge: '/notify-badge.png' } });
-  assert.equal(notificationFor(item('t2', 'blocked', T1), { reason: 'Waiting for your answer', where: 'dev › api' }).options.body, 'dev › api');
+test('the notification says who waits (inbox-notify-model.js), tagged by its episode', () => {
+  const shown = notificationFor(item('t1', 'error', T0, { detail: 'Build failed' }), { reason: 'Stopped with an error', workspace: 'dev', agent: 'Claude Code', lang: 'en' });
+  assert.deepEqual(shown, {
+    title: 'api · Stopped with an error',
+    options: { body: 'Build failed\nClaude Code · dev › api', tag: `mirador-inbox:t1:${T0}`, requireInteraction: false, icon: '/notify-icon.png', badge: '/notify-badge.png', lang: 'en', timestamp: Date.parse(T0) },
+  });
+  const blocked = notificationFor(item('t2', 'blocked', T1), { reason: 'Waiting for your answer', workspace: 'dev' });
+  assert.deepEqual([blocked.title, blocked.options.body, blocked.options.requireInteraction], ['api · Waiting for your answer', 'dev › api', true]);
 });
 
 /** A PNG's width and height, from its IHDR chunk, or null for anything else. */
@@ -143,7 +147,7 @@ function pngSize(path: string) {
 }
 
 test('the icon and the badge are PNGs of the mark under public/, served by Mirador itself', () => {
-  const options: Record<string, unknown> = notificationFor(item('t1', 'blocked', T0), { reason: 'r', where: 'w' }).options;
+  const { options } = notificationFor(item('t1', 'blocked', T0), { reason: 'r', workspace: 'w' });
   assert.deepEqual([options.icon, options.badge], ['/notify-icon.png', '/notify-badge.png'], 'same-origin paths, never another host');
   assert.deepEqual(pngSize('../public/notify-icon.png'), [192, 192]);
   assert.deepEqual(pngSize('../public/notify-badge.png'), [96, 96]);
@@ -180,7 +184,7 @@ function shownBy(baseline: unknown[] = []) {
     read: () => true,
     write: () => {},
     show: (shownItem: any) => {
-      const { title, options } = notificationFor(shownItem, { reason: shownItem.kind, where: 'dev › api' });
+      const { title, options } = notificationFor(shownItem, { reason: shownItem.kind, workspace: 'dev' });
       return new FakeNotification(title, options);
     },
   });
@@ -282,9 +286,9 @@ test('showNotification makes the notification notificationFor describes; a click
   FakeNotification.made = [];
   const card = item('t1', 'blocked', T0, { detail: 'npm publish' });
   const { calls, focus, open } = page();
-  const notice = showNotification(FakeNotification, card, { reason: 'Waiting for your answer', where: 'dev › api' }, { focus, open });
+  const notice = showNotification(FakeNotification, card, { reason: 'Waiting for your answer', workspace: 'dev' }, { focus, open });
   assert.equal(notice, FakeNotification.made[0]);
-  const expected = notificationFor(card, { reason: 'Waiting for your answer', where: 'dev › api' });
+  const expected = notificationFor(card, { reason: 'Waiting for your answer', workspace: 'dev' });
   assert.deepEqual([notice.title, notice.options], [expected.title, expected.options]);
   notice.onclick!();
   assert.deepEqual(calls, ['focus', 'open t1']);
@@ -297,7 +301,7 @@ test('a click on a stale notification focuses Mirador without throwing, whatever
   for (const options of [{}, { openThrows: true }, { focusThrows: true }, { focusThrows: true, openThrows: true }]) {
     FakeNotification.made = [];
     const { calls, focus, open } = page(options);
-    const notice = showNotification(FakeNotification, item('gone', 'error', T0), { reason: 'Stopped with an error', where: 'dev › api' }, { focus, open });
+    const notice = showNotification(FakeNotification, item('gone', 'error', T0), { reason: 'Stopped with an error', workspace: 'dev' }, { focus, open });
     notice.close = () => { throw new Error('already closed'); };
     assert.doesNotThrow(() => notice.onclick!(), JSON.stringify(options));
     assert.deepEqual(calls, ['focus', 'open gone'], JSON.stringify(options));
@@ -306,5 +310,98 @@ test('a click on a stale notification focuses Mirador without throwing, whatever
 
 test('showNotification lets a throwing constructor through, so the notifier counts the browser as unsupported', () => {
   class Throws { constructor() { throw new TypeError('Illegal constructor'); } }
-  assert.throws(() => showNotification(Throws, item('t1', 'blocked', T0), { reason: 'r', where: 'w' }, page()), TypeError);
+  assert.throws(() => showNotification(Throws, item('t1', 'blocked', T0), { reason: 'r', workspace: 'w' }, page()), TypeError);
+});
+
+// Bursts: when one stream message brings GROUP_AT (3) or more new cards to notify, one notification
+// stands for all of them, under one stable tag; fewer get one notification each, as before.
+
+/** A notifier that is on, with `show` and `showGroup` recording what they make (fake-class notifications). */
+function grouping() {
+  FakeNotification.made = [];
+  const singles: string[] = [];
+  const groups: string[][] = [];
+  const notifier = createInboxNotifier({
+    api: FakeNotification,
+    read: () => true,
+    write: () => {},
+    show: (shownItem: any) => {
+      singles.push(shownItem.terminalId);
+      return new FakeNotification(shownItem.terminalId, { tag: `mirador-inbox:${shownItem.terminalId}:${shownItem.since}`, body: '' });
+    },
+    showGroup: (list: any[]) => {
+      groups.push(list.map((shownItem) => shownItem.terminalId));
+      return new FakeNotification(`${list.length}`, { tag: 'mirador-inbox:group', body: '' });
+    },
+  });
+  notifier.receive([]);
+  return { notifier, singles, groups };
+}
+
+test('a burst: 2 new cards give 2 notifications, 3 give 1 for all of them', () => {
+  const two = grouping();
+  assert.deepEqual(two.notifier.receive([item('t1', 'blocked', T0), item('t2', 'error', T0)]).map((i: any) => i.terminalId), ['t1', 't2']);
+  assert.deepEqual([two.singles, two.groups], [['t1', 't2'], []]);
+
+  const three = grouping();
+  const burst = [item('t1', 'blocked', T0), item('t2', 'prompt', T0), item('t3', 'error', T0)];
+  assert.deepEqual(three.notifier.receive(burst).map((i: any) => i.terminalId), ['t1', 't2', 't3']);
+  assert.deepEqual([three.singles, three.groups], [[], [['t1', 't2', 't3']]]);
+  assert.deepEqual(three.notifier.receive(burst), [], 'the same snapshot again notifies nothing');
+});
+
+test('a burst counts only what notifies: finished turns, known cards and what the user looks at do not', () => {
+  const { notifier, singles, groups } = grouping();
+  notifier.receive([item('t0', 'blocked', T0)]);
+  const message = [item('t0', 'blocked', T0), item('t1', 'blocked', T1), item('t2', 'blocked', T1), item('t3', 'finished', T1), item('t4', 'blocked', T1)];
+  notifier.receive(message, (i: any) => i.terminalId === 't4');
+  assert.deepEqual([singles, groups], [['t0', 't1', 't2'], []]);
+});
+
+test('the burst notification closes when the last of its cards leaves; a later burst replaces it under the same tag', () => {
+  const { notifier, groups } = grouping();
+  const [a, b, c] = ['t1', 't2', 't3'].map((id) => item(id, 'blocked', T0));
+  notifier.receive([a, b, c]);
+  const first = FakeNotification.made[0];
+  notifier.receive([a, b]);
+  assert.equal(first.closed, 0, 'two of its cards still wait');
+  notifier.receive([a]);
+  assert.equal(first.closed, 0);
+  const [d, e, f] = ['t4', 't5', 't6'].map((id) => item(id, 'error', T1));
+  notifier.receive([a, d, e, f]);
+  const second = FakeNotification.made[1];
+  assert.deepEqual([groups.length, second.options.tag, first.options.tag], [2, 'mirador-inbox:group', 'mirador-inbox:group']);
+  notifier.receive([d, e, f]);
+  assert.equal(first.closed, 0, 'the browser already replaced it: closing it could close its replacement');
+  notifier.receive([]);
+  assert.equal(second.closed, 1, 'its cards left: closed once');
+});
+
+test('without showGroup (callers before bursts) every new card still gets its own notification', () => {
+  const { notifier, shown } = setup({ stored: true });
+  notifier.receive([]);
+  notifier.receive(['t1', 't2', 't3'].map((id) => item(id, 'blocked', T0)));
+  assert.equal(shown.length, 3);
+});
+
+test('a burst the browser refuses counts as unsupported, like a single one', () => {
+  const notifier = createInboxNotifier({ api: FakeNotification, read: () => true, write: () => {}, show: () => true, showGroup: () => null });
+  notifier.receive([]);
+  notifier.receive(['t1', 't2', 't3'].map((id) => item(id, 'blocked', T0)));
+  assert.equal(notifier.status(), 'unsupported');
+});
+
+test('showGroupNotification: the burst text; a click focuses Mirador, opens the inbox and closes it, never throwing', () => {
+  FakeNotification.made = [];
+  const calls: string[] = [];
+  const entries = ['t1', 't2', 't3'].map((id) => ({ item: item(id, 'blocked', T0), workspace: 'dev' }));
+  const words = { lang: 'en', waiting: (count: number) => `${count} agents are waiting for you` };
+  const notice = showGroupNotification(FakeNotification, entries, words, {
+    focus: () => { calls.push('focus'); throw new Error('no window'); },
+    openInbox: () => { calls.push('inbox'); },
+  });
+  assert.deepEqual([notice.title, notice.options.tag, notice.options.body], ['3 agents are waiting for you', 'mirador-inbox:group', 'api']);
+  notice.close = () => { throw new Error('already closed'); };
+  assert.doesNotThrow(() => notice.onclick!());
+  assert.deepEqual(calls, ['focus', 'inbox']);
 });
