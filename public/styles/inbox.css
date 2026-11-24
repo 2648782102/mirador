@@ -61,7 +61,7 @@
   cursor: pointer;
 }
 .inbox-jump:hover { border-color: var(--warn); }
-.inbox-jump.elsewhere { cursor: default; opacity: 0.8; }
+.inbox-jump.elsewhere { opacity: 0.8; }
 /* Finished turns rank below answers: calmer colour, same shape. */
 .inbox-group.review .inbox-group-head { color: var(--ok); }
 .inbox-group.review .inbox-count { background: var(--ok); }

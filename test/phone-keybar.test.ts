@@ -19,6 +19,7 @@ let boots = 0;
 const STUBS: Record<string, string> = {
   '/terminals.js': `const fake = () => globalThis.__phoneKeybar;
 export const terminalList = () => fake().list();
+export const adoptTerminals = async () => {};
 export const activeTerminalId = () => fake().activeId();
 export const activateTerminal = (id) => fake().activate(id);
 export const typeKey = (id, key) => fake().typeKey(id, key);

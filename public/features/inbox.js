@@ -24,7 +24,7 @@ import { tabAgent } from '/icons/agents.js';
 import { answers, cardLayout, inboxGroups, streamWatch, waitLabel } from '/features/inbox-model.js';
 import { createInboxNotifier, NOTIFY_PREF, NOTIFY_WINDOW_MS, showGroupNotification, showNotification as showCardNotification } from '/features/inbox-notify.js';
 import { GUARDED_LABEL, NOTIFY_DISCREET_PREF, NOTIFY_STAY_PREF } from '/features/inbox-notify-model.js';
-import { activateTerminal, activeTerminalId, markWaiting, terminalList } from '/terminals.js';
+import { activateTerminal, activeTerminalId, adoptTerminals, markWaiting, terminalList } from '/terminals.js';
 import { showsActiveTerminal } from '/features/phone-model.js';
 
 /** gentle-shell's blocker labels, translated; any other label is shown as the agent wrote it. */
@@ -137,6 +137,15 @@ function openCard(id) {
 }
 
 /**
+ * A card whose terminal this window lacks (opened in another window after this page loaded):
+ * read the terminal list, then open it if it came.
+ */
+async function openElsewhere(id) {
+  await adoptTerminals();
+  if (terminalList().some((info) => info.id === id)) openCard(id);
+}
+
+/**
  * One card; `named` adds its workspace to the place (the "needs you" list is not grouped by
  * workspace). Its parts follow cardLayout: the phone layout reads the reason first.
  */
@@ -164,7 +173,7 @@ function renderItem(item, note, here, named = false) {
     { class: note ? 'inbox-item night-note' : 'inbox-item' },
     here
       ? el('button', { type: 'button', class: 'inbox-jump', 'data-terminal': item.terminalId, title: t('inbox.jump'), onclick: () => openCard(item.terminalId) }, ...content)
-      : el('div', { class: 'inbox-jump elsewhere' }, ...content),
+      : el('button', { type: 'button', class: 'inbox-jump elsewhere', 'data-terminal': item.terminalId, title: t('inbox.jump'), onclick: () => openElsewhere(item.terminalId) }, ...content),
     file
       ? el('button', { type: 'button', class: 'btn inbox-file', onclick: () => emit('files:open', { ws: item.workspaceId, rel: item.rel, path: file }) }, t('inbox.openFile', { file }))
       : null,
