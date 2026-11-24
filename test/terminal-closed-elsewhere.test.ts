@@ -11,7 +11,8 @@ const publicDir = new URL('../public/', import.meta.url);
 const XTERM = `data:text/javascript,${encodeURIComponent(`
 export class Terminal {
   constructor() { this.cols = 80; this.rows = 24; this.options = {}; this.buffer = { active: { type: 'normal' } }; }
-  loadAddon() {} open() {} onData() {} onResize() {} focus() {} reset() {} resize() {} dispose() {}
+  loadAddon() {} open() {} onData() {} onResize() {} reset() {} resize() {} dispose() {}
+  focus() { globalThis.xtermFocus = (globalThis.xtermFocus ?? 0) + 1; }
   write(data, done) { done?.(); }
 }
 export class FitAddon { fit() {} }
@@ -224,9 +225,12 @@ Object.assign(globalThis, {
 (globalThis as any).document = new FakeDocument();
 const core = await import(new URL('core.js', publicDir).href);
 const { translate } = await import(new URL('i18n.js', publicDir).href);
-// The line an agent put to sleep leaves: features/sleeping.js init() wires the same listener.
+// The line an agent put to sleep leaves: wired by features/sleeping.js init() itself, which first
+// reads GET /api/terminals/sleeping (nothing sleeps here).
+core.session.token = 'test-token';
+(globalThis as any).fetch = async () => ({ status: 200, ok: true, json: async () => ({ agents: [] }) });
 const sleeping = await import(new URL('features/sleeping.js', publicDir).href);
-core.on('slept', sleeping.showSlept);
+await sleeping.init();
 
 let boots = 0;
 const info = (id: string, status = 'running') => ({ id, kind: 'shell', workspaceId: 'dev', rel: '', cwd: '/home/you/Dev', title: id, status, createdAt: '2026-11-24T12:00:00Z' });
@@ -265,6 +269,12 @@ async function boot(running: object[]) {
     answer: () => answer(),
     stop: () => stops.forEach((s) => s()),
     socket: (id: string) => sockets.findLast((s) => s.url.endsWith(`/${id}`))!,
+    /** How many times an xterm took the focus since the last call. */
+    focused: () => {
+      const count = (globalThis as any).xtermFocus ?? 0;
+      (globalThis as any).xtermFocus = 0;
+      return count;
+    },
     nodes: (id: string) => doc.querySelectorAll(`[data-terminal-id="${id}"]`).length,
     active: () => doc.querySelectorAll('#panes .active').map((pane) => pane.getAttribute('data-terminal-id')),
     lines: () => doc.querySelectorAll('[data-slot="alerts"] .slept-line'),
@@ -289,6 +299,34 @@ test('a terminal closed in another window drops its tab and pane here, activates
   assert.equal(page.nodes('t-b'), 0);
   assert.deepEqual(page.active(), ['t-c']);
   assert.deepEqual(page.lists.at(-1), ['t-c']);
+  page.stop();
+});
+
+test('S2/S4: a non-active terminal closed elsewhere or put to sleep never moves the activation, in any workspace', async () => {
+  const page = await boot([info('t-a'), { ...info('t-b'), workspaceId: 'other' }, { ...info('t-d'), workspaceId: 'other' }]);
+  core.state.workspaces = [{ id: 'dev', name: 'Dev', path: '/home/you/Dev' }, { id: 'other', name: 'Other', path: '/home/you/Other' }];
+  page.terminals.activateTerminal('t-d');
+  page.terminals.activateTerminal('t-a');
+  page.activated.length = 0;
+  page.socket('t-b').receive({ t: 'c', reason: 'sleep' });
+  assert.deepEqual(page.active(), ['t-a'], 'the active terminal stays');
+  assert.deepEqual(page.activated, [], 'no activate for a terminal the user did not pick');
+  assert.deepEqual(page.lists.at(-1), ['t-a', 't-d']);
+  page.stop();
+});
+
+test('a non-active terminal of the same workspace closed elsewhere leaves the active one in place and its focus alone', async () => {
+  const page = await boot([info('t-a'), info('t-b'), info('t-c')]);
+  page.terminals.activateTerminal('t-b');
+  page.terminals.activateTerminal('t-a');
+  page.activated.length = 0;
+  page.focused();
+  page.socket('t-c').receive({ t: 'c' });
+  assert.equal(page.nodes('t-c'), 0, 'its tab and pane are gone');
+  assert.deepEqual(page.active(), ['t-a'], 'the active terminal stays');
+  assert.deepEqual(page.activated, [], 'no activate');
+  assert.equal(page.focused(), 0, 'the active xterm is not focused again');
+  assert.deepEqual(page.lists, [['t-a', 't-b']], '`terminals` once, without it');
   page.stop();
 });
 

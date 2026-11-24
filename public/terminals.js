@@ -350,9 +350,10 @@ function mountTerminal(info) {
       if (stateFilter.length) applyLayout();
       emit('terminals', terminalList());
     },
-    // Closed in another window (or put to sleep): it leaves this one as its own × does. Put to sleep,
-    // `slept` lets features/sleeping.js say so; not for a tab already gone (its own ×).
-    closed: (record, reason) => dropTerminal(info.id, record) && reason === 'sleep' && emit('slept', record.info),
+    // Closed in another window (or put to sleep): it leaves this one as its own × does, but moves the
+    // activation only when it was the active one. Put to sleep, `slept` lets features/sleeping.js say
+    // so; not for a tab already gone (its own ×).
+    closed: (record, reason) => dropTerminal(info.id, record, activeId === info.id) && reason === 'sleep' && emit('slept', record.info),
     kept: () => terminals.has(info.id),
   });
 }
@@ -912,10 +913,11 @@ export async function closeTerminal(id) {
 
 /**
  * Takes terminal `id` out of this window, without asking the server: its tab and pane go, the next
- * terminal is activated, then `terminals` is emitted without it. Nothing if it is gone already, or
- * is no longer `record` (its own × and the server's close message both lead here). True when dropped here.
+ * terminal is activated when `activate`, then `terminals` is emitted without it. Nothing if it is
+ * gone already, or is no longer `record` (its own × and the server's close message both lead here).
+ * True when dropped here.
  */
-function dropTerminal(id, record = terminals.get(id)) {
+function dropTerminal(id, record = terminals.get(id), activate = true) {
   if (!record || terminals.get(id) !== record) return false;
   terminals.delete(id);
   activations.delete(id);
@@ -929,7 +931,7 @@ function dropTerminal(id, record = terminals.get(id)) {
   const same = rest.filter((info) => info.workspaceId === record.info.workspaceId);
   const expanded = rest.filter((info) => !collapsedGroups.has(info.workspaceId));
   const next = mostRecentTerminal(same.length ? same : expanded.length ? expanded : rest, activations);
-  if (next) activateTerminal(next.id);
+  if (activate && next) activateTerminal(next.id);
   emit('terminals', terminalList());
   return true;
 }
