@@ -163,6 +163,11 @@ test('a plain vX.Y.Z tag makes a normal draft release, not a pre-release', () =>
   assert.deepEqual(args, ['release', 'create', 'v0.2.0', '--draft', '--verify-tag', '--title', 'Mirador v0.2.0', '--notes-file', 'notes.md', 'dist/mirador-*.tar.gz', 'dist/SHA256SUMS']);
 });
 
+test('any pre-release suffix check-tag.sh accepts makes a pre-release; a plain version with large numbers does not', () => {
+  for (const tag of ['v0.2.0-rc.10', 'v2.0.0-alpha', 'v1.0.0-0']) assert.ok(draftReleaseArgs(tag).includes('--prerelease'), tag);
+  assert.ok(!draftReleaseArgs('v10.20.30').includes('--prerelease'), 'v10.20.30');
+});
+
 test('every archive gets a build-provenance attestation, and SHA256SUMS lists them all', () => {
   const [, body] = releaseJobs[0];
   assert.match(body, /- uses: actions\/attest-build-provenance@\S+.*\n {8}with:\n {10}subject-path: '?dist\/mirador-\*\.tar\.gz'?\n/);
