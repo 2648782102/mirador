@@ -545,6 +545,8 @@ const touchAt = (y: number) => ({ touches: [{ clientY: y }], cancelable: true, p
 /** Terminal `id`'s .pane-body, its fake xterm and a drag through `ys` px: touchstart at the first, touchmove at each next. */
 function terminalTouch(page: Awaited<ReturnType<typeof boot>>, id: string) {
   const body = page.pane(id).querySelector('.pane-body')!;
+  // The phone's terminal view (features/phone.js), the only place a finger scrolls the history.
+  document.body.dataset.phone = 'terminal';
   const term: FakeXterm = (globalThis as any).xterms.findLast((x: FakeXterm) => x.parent === body);
   const drag = (...ys: number[]): number[] => {
     const start = touchAt(ys[0]);
@@ -577,6 +579,18 @@ test('#67 S4: a tap, moving under 8 px, scrolls nothing and cancels nothing, so 
   const page = await boot([info('t-a')]);
   const { term, drag } = terminalTouch(page, 't-a');
   assert.deepEqual(drag(100, 103, 107, 96), [0, 0, 0, 0]);
+  assert.deepEqual(term.scrolled, []);
+  page.stop();
+});
+
+test('#67: outside the phone terminal view (a wide touch screen, the phone deck) a finger keeps its old behaviour: no scroll, nothing cancelled', async () => {
+  const page = await boot([info('t-a')]);
+  const { term, drag } = terminalTouch(page, 't-a');
+  for (const view of [undefined, 'deck', 'inbox']) {
+    if (view) document.body.dataset.phone = view;
+    else delete document.body.dataset.phone;
+    assert.deepEqual(drag(100, 140, 200, 20), [0, 0, 0, 0], `view ${view}`);
+  }
   assert.deepEqual(term.scrolled, []);
   page.stop();
 });

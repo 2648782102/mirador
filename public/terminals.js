@@ -364,7 +364,8 @@ function mountTerminal(info) {
  * A finger dragged over `term` (in `body`) scrolls its history (#67): xterm 6 does not, and the page
  * would move instead. Under TOUCH_SLOP px it stays a tap (focus, the keyboard, a link's click);
  * past it each move is cancelled, so the page stays put. A full-screen program (the alternate
- * buffer) gets its touches untouched. Mouse and pen input never reach here.
+ * buffer) gets its touches untouched. Mouse and pen input never reach here, and outside the phone's
+ * terminal view (a wide touch screen, the phone deck) a finger does what it did before.
  */
 function scrollByTouch(term, body) {
   let touch = null;
@@ -372,6 +373,8 @@ function scrollByTouch(term, body) {
     touch = event.touches.length === 1 ? { y: event.touches[0].clientY, dragging: false, rest: 0 } : null;
   }, { passive: true });
   body.addEventListener('touchmove', (event) => {
+    // Only the phone's terminal view (features/phone.js), where phone.css also stops the page's pan.
+    if (document.body.dataset.phone !== 'terminal') return;
     if (!touch || event.touches.length !== 1 || term.buffer.active.type === 'alternate') return;
     const y = event.touches[0].clientY;
     if (!touch.dragging && Math.abs(y - touch.y) < TOUCH_SLOP) return;
