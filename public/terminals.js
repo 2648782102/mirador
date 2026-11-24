@@ -35,6 +35,9 @@ const INPUT_CHUNK = 64 * 1024;
 const REPAINT_DELAY = 200;
 // How far, in CSS px, a finger moves over a terminal before it scrolls instead of tapping.
 const TOUCH_SLOP = 8;
+// How many lines of finger travel make one wheel report to a program tracking the mouse. To tune
+// after the phone test: a program may move several lines per report.
+const FINGER_LINES_PER_WHEEL = 1;
 let activeId = null;
 let layout = prefs.read('layout', 'tabs');
 // The last measured width of the terminals area (applyLayout); unmeasured, the grid stays near-square.
@@ -360,11 +363,21 @@ function mountTerminal(info) {
   });
 }
 
+/** The mouse tracking modes in which xterm reports the wheel to the program (x10 reports clicks only). */
+const WHEEL_TRACKING = new Set(['vt200', 'drag', 'any']);
+
 /**
- * A finger dragged over `term` (in `body`) scrolls its history (#67): xterm 6 does not, and the page
- * would move instead. Under TOUCH_SLOP px it stays a tap (focus, the keyboard, a link's click);
- * past it each move is cancelled, so the page stays put. A full-screen program (the alternate
- * buffer) gets its touches untouched. Mouse and pen input never reach here, and outside the phone's
+ * A finger dragged over `term` (in `body`) does what the desktop wheel does (#67); xterm 6 has no
+ * touch scrolling, and the page would move instead:
+ * 1. Mouse tracking with wheel reports (vt200, drag, any), in either screen (gentle-shell in the
+ *    alternate one, fzf --height in the normal one): one line-mode WheelEvent on term.element per
+ *    FINGER_LINES_PER_WHEEL lines, so xterm's own wheel listener encodes the report.
+ * 2. Otherwise, in the normal screen (no tracking, or x10, which reports no wheel): its history
+ *    scrolls (scrollLines).
+ * 3. Otherwise (the alternate screen without tracking or with x10: vim, less): the touches are
+ *    left untouched (#87).
+ * Under TOUCH_SLOP px it stays a tap (focus, the keyboard, a link's click); past it each move is
+ * cancelled, so the page stays put. Mouse and pen input never reach here, and outside the phone's
  * terminal view (a wide touch screen, the phone deck) a finger does what it did before.
  */
 function scrollByTouch(term, body) {
@@ -375,14 +388,21 @@ function scrollByTouch(term, body) {
   body.addEventListener('touchmove', (event) => {
     // Only the phone's terminal view (features/phone.js), where phone.css also stops the page's pan.
     if (document.body.dataset.phone !== 'terminal') return;
-    if (!touch || event.touches.length !== 1 || term.buffer.active.type === 'alternate') return;
-    const y = event.touches[0].clientY;
+    const wheel = WHEEL_TRACKING.has(term.modes.mouseTrackingMode);
+    const scroll = !wheel && term.buffer.active.type !== 'alternate';
+    if (!touch || event.touches.length !== 1 || !(wheel || scroll)) return;
+    const { clientX, clientY: y } = event.touches[0];
     if (!touch.dragging && Math.abs(y - touch.y) < TOUCH_SLOP) return;
     if (event.cancelable) event.preventDefault();
     const cellHeight = (body.querySelector('.xterm-screen')?.clientHeight ?? 0) / term.rows;
-    const { lines, rest } = dragLines(y - touch.y, cellHeight, touch.rest);
+    const { lines, rest } = dragLines(y - touch.y, wheel ? cellHeight * FINGER_LINES_PER_WHEEL : cellHeight, touch.rest);
     touch = { y, dragging: true, rest };
-    if (lines) term.scrollLines(lines);
+    // A finger moving down (lines < 0) is the wheel up, as it scrolls the history up; one report each.
+    if (wheel) {
+      for (let i = 0; i < Math.abs(lines); i++) {
+        term.element?.dispatchEvent(new WheelEvent('wheel', { deltaY: Math.sign(lines), deltaMode: WheelEvent.DOM_DELTA_LINE, clientX, clientY: y, bubbles: true, cancelable: true }));
+      }
+    } else if (lines) term.scrollLines(lines);
   }, { passive: false });
 }
 

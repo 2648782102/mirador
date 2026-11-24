@@ -6,7 +6,8 @@
 // The same page also checks that typing or clicking in a terminal takes its size back from another
 // window (a phone) that took it while this one kept the focus, and that a terminal opened in another
 // window after this page loaded joins it as a tab, and that a finger dragged over a terminal scrolls
-// its history (#67) while a tap stays a tap.
+// its history (#67) while a tap stays a tap, or reaches a full-screen program tracking the mouse as the
+// mouse wheel.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
@@ -14,10 +15,10 @@ import { registerHooks } from 'node:module';
 const publicDir = new URL('../public/', import.meta.url);
 const XTERM = `data:text/javascript,${encodeURIComponent(`
 export class Terminal {
-  constructor() { this.cols = 80; this.rows = 24; this.options = {}; this.buffer = { active: { type: 'normal' } }; this.scrolled = []; globalThis.xterms = [...(globalThis.xterms ?? []), this]; }
+  constructor() { this.cols = 80; this.rows = 24; this.options = {}; this.buffer = { active: { type: 'normal' } }; this.modes = { mouseTrackingMode: 'none' }; this.scrolled = []; globalThis.xterms = [...(globalThis.xterms ?? []), this]; }
   loadAddon() {} onData() {} onResize() {} reset() {} resize() {} dispose() {}
   // What xterm draws into: 24 rows of 17 px cells.
-  open(parent) { const screen = document.createElement('div'); screen.className = 'xterm-screen'; screen.clientHeight = 24 * 17; parent.append(screen); this.parent = parent; }
+  open(parent) { const screen = document.createElement('div'); screen.className = 'xterm-screen'; screen.clientHeight = 24 * 17; parent.append(screen); this.parent = parent; this.element = { events: [], dispatchEvent(event) { this.events.push(event); return true; } }; }
   scrollLines(amount) { this.scrolled.push(amount); }
   focus() { globalThis.xtermFocus = (globalThis.xtermFocus ?? 0) + 1; }
   write(data, done) { done?.(); }
@@ -538,9 +539,18 @@ test('the page shown again reads the list: a terminal with no card yet joins; on
   page.stop();
 });
 
-type FakeXterm = { parent: FakeElement; scrolled: number[]; buffer: { active: { type: string } } };
-/** A touch event at `y` px, one finger, counting its preventDefault calls. */
-const touchAt = (y: number) => ({ touches: [{ clientY: y }], cancelable: true, prevented: 0, preventDefault() { this.prevented++; } });
+/** What `new WheelEvent(type, init)` builds here: the browser's, reduced to what it was given. */
+class FakeWheelEvent {
+  static DOM_DELTA_LINE = 1;
+  type: string;
+  init: WheelEventInit;
+  constructor(type: string, init: WheelEventInit) { this.type = type; this.init = init; }
+}
+(globalThis as { WheelEvent?: unknown }).WheelEvent = FakeWheelEvent;
+
+type FakeXterm = { parent: FakeElement; scrolled: number[]; buffer: { active: { type: string } }; modes: { mouseTrackingMode: string }; element: { events: FakeWheelEvent[] } };
+/** A touch event at `y` px (and 30 px from the left), one finger, counting its preventDefault calls. */
+const touchAt = (y: number) => ({ touches: [{ clientX: 30, clientY: y }], cancelable: true, prevented: 0, preventDefault() { this.prevented++; } });
 
 /** Terminal `id`'s .pane-body, its fake xterm and a drag through `ys` px: touchstart at the first, touchmove at each next. */
 function terminalTouch(page: Awaited<ReturnType<typeof boot>>, id: string) {
@@ -595,11 +605,81 @@ test('#67: outside the phone terminal view (a wide touch screen, the phone deck)
   page.stop();
 });
 
-test('#67 S6: a full-screen program (the alternate buffer) gets the touches untouched: no scroll, nothing cancelled', async () => {
+test('#67 S6: a full-screen program (the alternate buffer) that does not report the wheel (vim, less) gets the touches untouched: no scroll, no wheel, nothing cancelled', async () => {
   const page = await boot([info('t-a')]);
   const { term, drag } = terminalTouch(page, 't-a');
   term.buffer.active.type = 'alternate';
-  assert.deepEqual(drag(100, 140, 200, 20), [0, 0, 0, 0]);
+  for (const mode of ['none', 'x10']) {
+    term.modes.mouseTrackingMode = mode;
+    assert.deepEqual(drag(100, 140, 200, 20), [0, 0, 0, 0], mode);
+  }
+  assert.deepEqual(term.scrolled, []);
+  assert.deepEqual(term.element.events, []);
+  page.stop();
+});
+
+/** The wheel events `term` was sent since the last call, as [deltaY, deltaMode, clientX, clientY]. */
+const wheels = (term: FakeXterm) => term.element.events.splice(0).map((event) => {
+  assert.equal(event.type, 'wheel');
+  assert.equal(event.init.bubbles, true);
+  assert.equal(event.init.cancelable, true);
+  return [event.init.deltaY, event.init.deltaMode, event.init.clientX, event.init.clientY];
+});
+
+test('#67 S8, S9: in a full-screen program tracking the mouse (gentle-shell) a finger drag reaches it as the mouse wheel, a line event per 17 px cell, and the page does not move', async () => {
+  const page = await boot([info('t-a')]);
+  const { term, drag } = terminalTouch(page, 't-a');
+  term.buffer.active.type = 'alternate';
+  term.modes.mouseTrackingMode = 'any';
+  // Finger down 40 px: the wheel up twice, where the finger is; under 8 px nothing.
+  assert.deepEqual(drag(100, 104, 140), [0, 0, 1]);
+  assert.deepEqual(wheels(term), [[-1, 1, 30, 140], [-1, 1, 30, 140]]);
+  // Finger up 52 px: the wheel down three times, at the move that made the lines.
+  assert.deepEqual(drag(200, 190, 148), [0, 1, 1]);
+  assert.deepEqual(wheels(term), [[1, 1, 30, 148], [1, 1, 30, 148], [1, 1, 30, 148]]);
+  assert.deepEqual(term.scrolled, [], 'the history is not scrolled: the program has the screen');
+  for (const mode of ['vt200', 'drag']) {
+    term.modes.mouseTrackingMode = mode;
+    assert.deepEqual(drag(100, 140), [0, 1], mode);
+    assert.deepEqual(wheels(term), [[-1, 1, 30, 140], [-1, 1, 30, 140]], mode);
+  }
+  page.stop();
+});
+
+test('#67 S8: in the normal screen a program tracking the mouse (fzf --height) gets the drag as the wheel too', async () => {
+  const page = await boot([info('t-a')]);
+  const { term, drag } = terminalTouch(page, 't-a');
+  for (const mode of ['any', 'drag']) {
+    term.modes.mouseTrackingMode = mode;
+    assert.deepEqual(drag(100, 104, 140), [0, 0, 1], mode);
+    assert.deepEqual(wheels(term), [[-1, 1, 30, 140], [-1, 1, 30, 140]], mode);
+  }
+  assert.deepEqual(term.scrolled, [], 'the history is not scrolled: the program gets the wheel');
+  page.stop();
+});
+
+test('#67 S8: x10 tracking (no wheel reports) in the normal screen scrolls the history, as the desktop wheel does, and the page does not move', async () => {
+  const page = await boot([info('t-a')]);
+  const { term, drag } = terminalTouch(page, 't-a');
+  term.modes.mouseTrackingMode = 'x10';
+  assert.deepEqual(drag(100, 104, 140), [0, 0, 1]);
+  assert.deepEqual(term.scrolled, [-2]);
+  assert.deepEqual(term.element.events, [], 'no wheel');
+  page.stop();
+});
+
+test('#67 S10: with the wheel reported, a tap under 8 px and any drag outside the phone terminal view send no wheel and cancel nothing', async () => {
+  const page = await boot([info('t-a')]);
+  const { term, drag } = terminalTouch(page, 't-a');
+  term.buffer.active.type = 'alternate';
+  term.modes.mouseTrackingMode = 'any';
+  assert.deepEqual(drag(100, 103, 107, 96), [0, 0, 0, 0], 'a tap');
+  for (const view of [undefined, 'deck', 'inbox']) {
+    if (view) document.body.dataset.phone = view;
+    else delete document.body.dataset.phone;
+    assert.deepEqual(drag(100, 140, 200, 20), [0, 0, 0, 0], `view ${view}`);
+  }
+  assert.deepEqual(term.element.events, []);
   assert.deepEqual(term.scrolled, []);
   page.stop();
 });
