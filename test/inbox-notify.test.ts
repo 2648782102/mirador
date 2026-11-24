@@ -165,10 +165,10 @@ class FakeNotification {
   static permission = 'granted';
   static requestPermission() { return Promise.resolve('granted'); }
   title: string;
-  options: { tag: string; body: string };
+  options: { tag: string; body: string; requireInteraction?: boolean };
   closed = 0;
   onclick: null | (() => void) = null;
-  constructor(title: string, options: { tag: string; body: string }) {
+  constructor(title: string, options: { tag: string; body: string; requireInteraction?: boolean }) {
     this.title = title;
     this.options = options;
     FakeNotification.made.push(this);
@@ -414,7 +414,7 @@ test('showGroupNotification: the burst text; a click focuses Mirador, opens the 
  * A notifier on the 1.5 s window whose timer the test runs (`tick()` ends the window), with `show`
  * and `showGroup` making fake-class notifications. `stored` is the saved choice.
  */
-function windowed(options: { api?: ReturnType<typeof fakeApi>; stored?: boolean; show?: (item: any) => unknown } = {}) {
+function windowed(options: { api?: ReturnType<typeof fakeApi>; stored?: boolean; show?: (item: any) => unknown; showGroup?: (items: any[]) => unknown } = {}) {
   FakeNotification.made = [];
   const api = options.api ?? fakeApi('granted');
   let stored = options.stored ?? true;
@@ -434,7 +434,7 @@ function windowed(options: { api?: ReturnType<typeof fakeApi>; stored?: boolean;
     }),
     showGroup: (list: any[]) => {
       groups.push(list.map((shownItem) => shownItem.terminalId));
-      return new FakeNotification(`${list.length}`, { tag: 'mirador-inbox:group', body: '' });
+      return options.showGroup ? options.showGroup(list) : new FakeNotification(`${list.length}`, { tag: 'mirador-inbox:group', body: '' });
     },
     windowMs: NOTIFY_WINDOW_MS,
     setTimer: (fn: () => void, ms: number) => { started.push(ms); timers.set(++next, fn); return next; },
@@ -505,13 +505,52 @@ test('the window: a card that leaves inside it is never shown; an empty window e
   assert.equal(timers.size, 0);
 });
 
-test('the window: a card shows as it first appeared; a change or the same snapshot inside the window does not queue it again', () => {
-  const { notifier, tick } = windowed();
-  notifier.receive([item('t1', 'blocked', T0)]);
-  notifier.receive([item('t1', 'error', T1, { label: 'Error' })]);
-  notifier.receive([item('t1', 'error', T1, { label: 'Error' })]);
+/** The page's texts (English), by the card's kind. */
+const words = (shownItem: any) => ({ reason: shownItem.kind === 'error' ? 'Stopped with an error' : 'Waiting for your answer', workspace: 'dev', lang: 'en', waiting: (count: number) => `${count} agents are waiting for you` });
+
+/** A windowed notifier showing what the page shows: showNotification and showGroupNotification on the fake class. */
+const realWindowed = () => windowed({
+  show: (shownItem: any) => showNotification(FakeNotification, shownItem, words(shownItem), page()),
+  showGroup: (list: any[]) => showGroupNotification(FakeNotification, list.map((shownItem) => ({ item: shownItem, workspace: 'dev' })), words(list[0]), { focus: () => {}, openInbox: () => {} }),
+});
+
+test('the window: a card shows as it is when the window ends, tagged by its start; the same snapshot does not queue it again', () => {
+  const { notifier, tick } = realWindowed();
+  notifier.receive([item('t1', 'error', T0, { label: 'Error', detail: 'Build failed' })]);
+  notifier.receive([item('t1', 'blocked', T1, { detail: 'Deploy to production?' })]);
+  notifier.receive([item('t1', 'blocked', T1, { detail: 'Deploy to production?' })]);
   tick();
-  assert.deepEqual(FakeNotification.made.map((n) => n.options.tag), [`mirador-inbox:t1:${T0}`], 'one notification, tagged by the card as it started');
+  assert.deepEqual(FakeNotification.made.map((n) => [n.title, n.options.body, n.options.requireInteraction, n.options.tag]), [
+    ['api · Waiting for your answer', 'Deploy to production?\ndev › api', true, `mirador-inbox:t1:${T0}`],
+  ], 'one notification: blocked now, tagged by the card as it started');
+});
+
+test('the window: a dialog whose question changes inside it shows the new question', () => {
+  const { notifier, tick } = realWindowed();
+  notifier.receive([item('t1', 'prompt', T0, { detail: 'Pick a model' })]);
+  notifier.receive([item('t1', 'prompt', T0, { detail: 'Pick a database' })]);
+  tick();
+  assert.deepEqual(FakeNotification.made.map((n) => n.options.body), ['Pick a database\ndev › api']);
+});
+
+test('a later burst keeps the earlier burst\'s waiting cards: it covers them, stays on screen for them, and closes with the last one', () => {
+  const { notifier, groups, tick } = realWindowed();
+  const [b1, b2, b3] = cards(['t1', 't2', 't3']);
+  notifier.receive([b1, b2, b3]);
+  tick();
+  notifier.receive([b2, b3]); // t1 answered: it is not part of what comes next
+  const [e4, e5, e6] = cards(['t4', 't5', 't6'], 'error', T1);
+  notifier.receive([b2, b3, e4, e5, e6]);
+  tick();
+  const [first, second] = FakeNotification.made;
+  assert.deepEqual(groups, [['t1', 't2', 't3'], ['t2', 't3', 't4', 't5', 't6']], 'the blocked cards still waiting, then the errors');
+  assert.deepEqual([second.title, second.options.requireInteraction, second.options.tag], ['5 agents are waiting for you', true, 'mirador-inbox:group']);
+  notifier.receive([b2, b3]);
+  assert.deepEqual([first.closed, second.closed], [0, 0], 'the errors left; two blocked cards still wait');
+  notifier.receive([b3]);
+  assert.equal(second.closed, 0);
+  notifier.receive([]);
+  assert.deepEqual([first.closed, second.closed], [0, 1], 'closed once, with the last card; the replaced one is left alone');
 });
 
 test('the window: notifications turned off inside it show nothing, and what it held never notifies later', async () => {

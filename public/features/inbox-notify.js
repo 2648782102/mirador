@@ -17,10 +17,12 @@
 // The window: the server sends one stream message per change, so agents that start waiting at
 // almost the same moment arrive one message each. With `windowMs` (inbox.js passes NOTIFY_WINDOW_MS,
 // 1.5 s) the page collects the new cards from the first of them until the window ends, then
-// notifies: fewer than GROUP_AT one by one, GROUP_AT (3) or more as one burst notification, closed
-// when the last of them leaves. A card that leaves inside the window, or that the user opens (or
-// looked at when it arrived), is never notified; notifications turned off or blocked by then show
-// nothing. Without `windowMs` each message notifies at once. What each says is inbox-notify-model.js.
+// notifies, each card as it is by then (tagged by its start): fewer than GROUP_AT one by one,
+// GROUP_AT (3) or more as one burst notification, closed when the last of them leaves. A burst
+// replaces the last one's notification, so it also covers that burst's cards that still wait. A
+// card that leaves inside the window, or that the user opens (or looked at when it arrived), is
+// never notified; notifications turned off or blocked by then show nothing. Without `windowMs`
+// each message notifies at once. What each says is inbox-notify-model.js.
 
 import { cardNotification, GROUP_AT, groupNotification } from './inbox-notify-model.js';
 
@@ -47,6 +49,15 @@ const quietly = (step) => {
 
 /** Blockers, dialogs and errors notify; a finished turn waits for a review and does not. */
 const notifies = (item) => item.kind !== 'finished';
+
+/** Brings each card in `cards` (key → item) to its state in `current`, keeping its start (its tag); one no longer there is dropped. */
+const follow = (cards, current) => {
+  for (const [key, was] of cards) {
+    const now = current.get(key);
+    if (now) cards.set(key, { ...now, since: was.since });
+    else cards.delete(key);
+  }
+};
 
 /**
  * The notifier behind the inbox's notification button.
@@ -82,9 +93,9 @@ export function createInboxNotifier({
   let known = null;
   /** Card key → the notification this page showed for it, closed when its last card leaves (a burst's stands for several). */
   const open = new Map();
-  /** The last burst notification: a new burst replaces it in the browser, under the same tag. */
-  let burst = null;
-  /** Card key → a new card waiting for the window to end, as it first showed up (so its tag is the card's start). */
+  /** Card key → each card of the last burst notification that still waits, as it is now: a new burst replaces that notification in the browser, under the same tag, so it covers them too. */
+  const burst = new Map();
+  /** Card key → a new card waiting for the window to end, as it is now, with the start it showed up with (its tag). */
   const pending = new Map();
   /** The window's timer, while one runs. */
   let timer = null;
@@ -115,12 +126,18 @@ export function createInboxNotifier({
   /** Shows `due` (new cards nobody is looking at): one burst notification, or one each; → the ones shown. */
   const notify = (due) => {
     if (showGroup && due.length >= GROUP_AT) {
-      const notice = showGroup(due);
+      const all = [...burst.values(), ...due];
+      const notice = showGroup(all);
       if (!notice) return refused([]);
       // The browser replaced the last burst's notification: closing it now could close this one.
-      for (const [key, shown] of open) if (shown === burst) open.delete(key);
-      burst = notice;
-      if (typeof notice.close === 'function') for (const item of due) open.set(cardKey(item), notice);
+      for (const key of burst.keys()) open.delete(key);
+      burst.clear();
+      if (typeof notice.close === 'function') {
+        for (const item of all) {
+          open.set(cardKey(item), notice);
+          burst.set(cardKey(item), item);
+        }
+      }
       return due;
     }
     const shown = [];
@@ -173,8 +190,9 @@ export function createInboxNotifier({
         open.delete(key);
         if (![...open.values()].includes(notice)) quietly(() => notice.close());
       }
-      // A card that left inside the window is never notified.
-      for (const key of pending.keys()) if (!current.has(key)) pending.delete(key);
+      // A card that left inside the window is never notified; one that stays shows as it is now.
+      follow(pending, current);
+      follow(burst, current);
       const fresh = known ? [...current].filter(([key]) => !known.has(key)).map(([, item]) => item) : [];
       known = new Set(current.keys());
       if (status() !== 'on') {
