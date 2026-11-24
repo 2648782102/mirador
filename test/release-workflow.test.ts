@@ -6,7 +6,10 @@
 // commit.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const read = (path: string) => readFileSync(fileURLToPath(new URL(`../${path}`, import.meta.url)), 'utf8');
@@ -104,6 +107,65 @@ test('the publishing job waits for every build and creates a draft release, and 
   assert.match(creates[0], /--draft\b/);
   assert.match(creates[0], /--verify-tag\b/);
   assert.doesNotMatch(code(WORKFLOW), /gh release (?:edit|delete|upload)|--draft=false|draft: false|make_latest|gh api/);
+});
+
+/** The `run:` script of the step named `name`, without its block indentation. */
+function stepScript(text: string, name: string): string {
+  const lines = code(text).split('\n');
+  const at = lines.findIndex((line) => line.trim() === `- name: ${name}`);
+  assert.ok(at >= 0, `no step ${name}`);
+  const runAt = lines.findIndex((line, i) => i > at && /^\s*run: \|$/.test(line));
+  assert.ok(runAt > at, `step ${name} has no run block`);
+  const indent = /^\s*/.exec(lines[runAt])![0].length;
+  const body: string[] = [];
+  for (let i = runAt + 1; i < lines.length && (lines[i].trim() === '' || /^\s*/.exec(lines[i])![0].length > indent); i++) body.push(lines[i]);
+  const margin = Math.min(...body.filter((line) => line.trim()).map((line) => /^\s*/.exec(line)![0].length));
+  return body.map((line) => line.slice(margin)).join('\n') + '\n';
+}
+
+/** Runs the "Create the draft release" step for `tag` with a stand-in gh, and returns the arguments gh got. */
+function draftReleaseArgs(tag: string): string[] {
+  const dir = mkdtempSync(join(tmpdir(), 'mirador-release-step-'));
+  try {
+    mkdirSync(join(dir, 'dist'));
+    mkdirSync(join(dir, 'bin'));
+    mkdirSync(join(dir, 'scripts', 'release'), { recursive: true });
+    cpSync(fileURLToPath(new URL('../scripts/release/pins.sh', import.meta.url)), join(dir, 'scripts', 'release', 'pins.sh'));
+    const version = tag.slice(1);
+    writeFileSync(join(dir, 'dist', 'SHA256SUMS'), `${'a'.repeat(64)}  mirador-${version}-linux-x64.tar.gz\n${'b'.repeat(64)}  mirador-${version}-linux-arm64.tar.gz\n`);
+    writeFileSync(join(dir, 'bin', 'gh'), '#!/bin/sh\nfor arg in "$@"; do printf \'%s\\n\' "$arg"; done > "$GH_ARGS"\n');
+    chmodSync(join(dir, 'bin', 'gh'), 0o755);
+    writeFileSync(join(dir, 'step.sh'), stepScript(WORKFLOW, 'Create the draft release'));
+    execFileSync('sh', ['-eu', 'step.sh'], {
+      cwd: dir,
+      env: { PATH: `${join(dir, 'bin')}:${process.env.PATH}`, TAG: tag, GITHUB_SHA: 'f'.repeat(40), GITHUB_REPOSITORY: 'owner/mirador', GH_ARGS: join(dir, 'gh-args') },
+      stdio: 'pipe',
+    });
+    return readFileSync(join(dir, 'gh-args'), 'utf8').split('\n').slice(0, -1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test('a tag with a pre-release suffix makes a draft pre-release, so a candidate never becomes the latest release', () => {
+  for (const tag of ['v0.2.0-rc.2', 'v1.0.0-beta.1']) {
+    const args = draftReleaseArgs(tag);
+    assert.deepEqual(args.slice(0, 2), ['release', 'create'], args.join(' '));
+    assert.equal(args[2], tag);
+    assert.ok(args.includes('--draft'), `${tag}: ${args.join(' ')}`);
+    assert.ok(args.includes('--prerelease'), `${tag}: ${args.join(' ')}`);
+    assert.ok(args.includes('--verify-tag'), `${tag}: ${args.join(' ')}`);
+  }
+});
+
+test('a plain vX.Y.Z tag makes a normal draft release, not a pre-release', () => {
+  const args = draftReleaseArgs('v0.2.0');
+  assert.deepEqual(args, ['release', 'create', 'v0.2.0', '--draft', '--verify-tag', '--title', 'Mirador v0.2.0', '--notes-file', 'notes.md', 'dist/mirador-*.tar.gz', 'dist/SHA256SUMS']);
+});
+
+test('any pre-release suffix check-tag.sh accepts makes a pre-release; a plain version with large numbers does not', () => {
+  for (const tag of ['v0.2.0-rc.10', 'v2.0.0-alpha', 'v1.0.0-0']) assert.ok(draftReleaseArgs(tag).includes('--prerelease'), tag);
+  assert.ok(!draftReleaseArgs('v10.20.30').includes('--prerelease'), 'v10.20.30');
 });
 
 test('every archive gets a build-provenance attestation, and SHA256SUMS lists them all', () => {
