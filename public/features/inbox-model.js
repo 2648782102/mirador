@@ -52,3 +52,85 @@ export function waitLabel(since, now) {
 export function cardLayout(phone, named) {
   return phone ? { parts: ['reason', 'place', 'meta', 'detail', 'night'], named: true } : { parts: ['place', 'reason', 'detail', 'night', 'meta'], named };
 }
+
+/**
+ * The inbox stream's liveness (GET /api/inbox/stream, read by inbox.js follow()). The server writes
+ * a `{}` heartbeat every 25 s (HEARTBEAT_MS, src/http/routes/inbox.ts), so a stream that reads
+ * nothing for STREAM_SILENCE_MS is taken as dead, even though its socket is still open: on a phone,
+ * the SSH tunnel can die while the browser is in the background, and the read then waits forever on
+ * the local end. Two heartbeats plus 10 s: one heartbeat late or lost on a slow link is not a dead
+ * stream; two missed in a row, with room for the time a phone takes to wake, is.
+ */
+export const STREAM_HEARTBEAT_MS = 25_000;
+export const STREAM_SILENCE_MS = 2 * STREAM_HEARTBEAT_MS + 10_000;
+
+/**
+ * Whether the stream is not to be trusted at `now` (ms): nothing read for the bound since `since`
+ * (when the try started or last read anything), or, given `hiddenAt`, the page was hidden that long.
+ */
+export function streamStale({ since, now, hiddenAt = null, bound = STREAM_SILENCE_MS }) {
+  return now - since >= bound || (hiddenAt !== null && now - hiddenAt >= bound);
+}
+
+/**
+ * Watches each try of the stream, with the clock and timers given (`now`, `setTimer`, `clearTimer`).
+ * `open()` starts a try and returns the AbortSignal for its fetch; `alive()` marks anything read;
+ * `close()` ends the try (aborting it, so nothing is left open). A try silent for the bound is
+ * aborted by its timer, and the caller retries with its backoff. `hidden()` and `visible()` follow
+ * the page: coming back after being hidden for the bound, or to a try silent for the bound (a phone
+ * holds timers while it sleeps), aborts the try at once, and `retryNow()` then says to skip the
+ * backoff. A fresh try survives any number of flips, so nothing loops while the page is hidden.
+ */
+export function streamWatch({ now, setTimer, clearTimer, bound = STREAM_SILENCE_MS }) {
+  let controller = null;
+  let since = 0;
+  let timer = null;
+  let hiddenAt = null;
+  let urgent = false;
+  const stopTimer = () => {
+    if (timer !== null) clearTimer(timer);
+    timer = null;
+  };
+  const check = () => {
+    timer = null;
+    if (!controller) return;
+    const at = now();
+    if (streamStale({ since, now: at, bound })) controller.abort();
+    else timer = setTimer(check, since + bound - at);
+  };
+  return {
+    open() {
+      this.close();
+      controller = new AbortController();
+      since = now();
+      urgent = false;
+      timer = setTimer(check, bound);
+      return controller.signal;
+    },
+    alive() {
+      since = now();
+    },
+    close() {
+      stopTimer();
+      controller?.abort();
+      controller = null;
+    },
+    hidden() {
+      hiddenAt ??= now();
+    },
+    visible() {
+      const was = hiddenAt;
+      hiddenAt = null;
+      if (was === null || !controller || !streamStale({ since, now: now(), hiddenAt: was, bound })) return false;
+      urgent = true;
+      stopTimer();
+      controller.abort();
+      return true;
+    },
+    retryNow() {
+      const skip = urgent;
+      urgent = false;
+      return skip;
+    },
+  };
+}
