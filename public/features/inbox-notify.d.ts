@@ -18,6 +18,9 @@ export type InboxNotifyStatus = 'unsupported' | 'denied' | 'on' | 'off';
 /** The prefs key (localStorage `mirador.inboxNotify`). */
 export const NOTIFY_PREF: 'inboxNotify';
 
+/** How long the page collects new cards before it notifies (1.5 s). */
+export const NOTIFY_WINDOW_MS: 1500;
+
 /** One waiting episode: the terminal and when it started waiting. */
 export function episodeKey(item: InboxNotifyItem): string;
 
@@ -31,7 +34,10 @@ export interface InboxNotifier {
   status(): InboxNotifyStatus;
   /** From a click only: asks for the permission when needed; resolves to the new status. */
   toggle(): Promise<InboxNotifyStatus>;
-  /** Called with each stream message's items; returns the ones it notified. */
+  /**
+   * Called with each stream message's items; returns the ones it notified now (with a window,
+   * always none: they notify when the window ends).
+   */
   receive<T>(items: readonly T[], skip?: (item: T) => boolean): T[];
 }
 
@@ -46,6 +52,13 @@ export function createInboxNotifier(deps: {
   show: (item: any) => unknown;
   /** Shows one notification for a burst of GROUP_AT or more new cards; without it each card gets its own. */
   showGroup?: (items: any[]) => unknown;
+  /** How long new cards are collected before they notify (NOTIFY_WINDOW_MS in the page); default 0, each message at once. */
+  windowMs?: number;
+  /** Runs the window (default setTimeout and clearTimeout). */
+  setTimer?: (fn: () => void, ms: number) => any;
+  clearTimer?: (id: any) => unknown;
+  /** The browser refused a notification when the window ended: status() now reads 'unsupported'. */
+  onRefused?: () => unknown;
 }): InboxNotifier;
 
 export interface InboxNotificationText {

@@ -5,6 +5,7 @@
 // ready for review" (the agent ended its turn) below, by workspace and folder. Browser
 // notifications are opt-in from the button above the list (inbox-notify.js), with two switches
 // beside it: notices that ask stay on screen (on by default) and discreet mode (off by default).
+// New cards are collected for 1.5 s (NOTIFY_WINDOW_MS) before they notify, so a burst groups.
 // The terminal the user is looking at is not listed, and the view says
 // so while nothing waits. Updates arrive on GET /api/inbox/stream (NDJSON over fetch,
 // since EventSource cannot send the session token); see src/http/routes/inbox.ts.
@@ -21,7 +22,7 @@ import { nightView } from '/i18n/inbox.js';
 import { icon } from '/icons.js';
 import { tabAgent } from '/icons/agents.js';
 import { answers, cardLayout, inboxGroups, streamWatch, waitLabel } from '/features/inbox-model.js';
-import { createInboxNotifier, NOTIFY_PREF, showGroupNotification, showNotification as showCardNotification } from '/features/inbox-notify.js';
+import { createInboxNotifier, NOTIFY_PREF, NOTIFY_WINDOW_MS, showGroupNotification, showNotification as showCardNotification } from '/features/inbox-notify.js';
 import { NOTIFY_DISCREET_PREF, NOTIFY_STAY_PREF } from '/features/inbox-notify-model.js';
 import { activateTerminal, activeTerminalId, markWaiting, terminalList } from '/terminals.js';
 import { showsActiveTerminal } from '/features/phone-model.js';
@@ -64,18 +65,20 @@ let announced = null;
 let phoneView = null;
 /** The stream's state: 'live' while it reads, 'reconnecting' before the first answer and between tries. */
 let stream = 'reconnecting';
-/** Each try of the stream: aborted when silent past the bound, or on coming back to the page (inbox-model.js). */
-// unref: in Node (the tests run this file) a pending watch does not keep the process alive; a browser's
-// timer id is a number, which has none.
-const watch = streamWatch({
-  now: () => Date.now(),
+/**
+ * The timers of the stream's watch and of the notifications' window. unref: in Node (the tests run
+ * this file) a pending timer does not keep the process alive; a browser's timer id is a number, which has none.
+ */
+const timers = {
   setTimer: (fn, ms) => {
     const id = setTimeout(fn, ms);
     id?.unref?.();
     return id;
   },
   clearTimer: (id) => clearTimeout(id),
-});
+};
+/** Each try of the stream: aborted when silent past the bound, or on coming back to the page (inbox-model.js). */
+const watch = streamWatch({ now: () => Date.now(), ...timers });
 /** Ends follow()'s pending backoff wait at once; null when it is not waiting. */
 let wake = null;
 const baseTitle = document.title.replace(/^\(\d+\)\s*/, '') || BRAND;
@@ -396,10 +399,8 @@ async function follow() {
             notes = Array.isArray(message.nightNotes) ? message.nightNotes : [];
             render();
             announce();
-            // Only stream messages notify; a re-render or a reconnect's same snapshot never does.
-            const before = notifier.status();
+            // Only stream messages notify (after the window); a re-render or a reconnect's same snapshot never does.
             notifier.receive(items, inView);
-            if (notifier.status() !== before) renderNotify();
           }
         }
         if (buffer.length > MAX_BUFFER) break;
@@ -438,6 +439,10 @@ export async function init() {
     write: (value) => prefs.write(NOTIFY_PREF, value),
     show: showNotification,
     showGroup,
+    // The window ends with what the user is looking at then; a browser that refuses changes the control.
+    windowMs: NOTIFY_WINDOW_MS,
+    ...timers,
+    onRefused: () => renderNotify(),
   });
   api('GET', '/api/agents')
     .then((answer) => { offeredAgents = Array.isArray(answer?.agents) ? answer.agents : []; })

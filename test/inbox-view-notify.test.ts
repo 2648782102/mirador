@@ -2,9 +2,12 @@
 // The real inbox.js, inbox-notify.js and
 // inbox-model.js run in Node on a small DOM stand-in, a fake Notification class and a fake inbox
 // stream; '/core.js', '/terminals.js' and '/icons.js' are stand-ins (data: modules).
+// The notifications wait for the page's 1.5 s window (inbox-notify.js NOTIFY_WINDOW_MS): the test
+// holds those timers and ends the window itself (endWindow).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
+import { NOTIFY_WINDOW_MS } from '../public/features/inbox-notify.js';
 
 const publicDir = new URL('../public/', import.meta.url);
 const stub = (source: string) => `data:text/javascript,${encodeURIComponent(source)}`;
@@ -14,18 +17,18 @@ const STUBS: Record<string, string> = {
     export const api = (...a) => C.api(...a);
     export const el = (...a) => C.el(...a);
     export const emit = () => {};
-    export const getLanguage = () => 'en';
-    export const on = () => {};
+    export const getLanguage = () => C.lang;
+    export const on = (name, fn) => C.on(name, fn);
     export const prefs = C.prefs;
     export const session = C.session;
     export const slot = () => C.slot();
     export const t = (key) => key;
-    export const workspaceById = (id) => ({ id, name: id });
+    export const workspaceById = (id) => ({ id, name: id === 'dev' ? 'Dev' : id });
   `),
   '/terminals.js': stub(`
     const C = globalThis.__inboxCore;
     export const activateTerminal = (id) => C.activated.push(id);
-    export const activeTerminalId = () => null;
+    export const activeTerminalId = () => C.active;
     export const markWaiting = () => {};
     export const terminalList = () => C.terminals;
   `),
@@ -73,6 +76,8 @@ class FakeElement {
   contains(node: unknown): boolean { return node === this || this.children.some((c) => typeof c !== 'string' && c.contains(node)); }
   querySelector() { return null; }
   querySelectorAll() { return []; }
+  /** Set for an element on screen (inbox.js shows the panel only when its "show" button is visible). */
+  offsetParent: FakeElement | null = null;
   /** Hidden or disabled controls do not take the focus, as in a browser. */
   focus() {
     for (let node: FakeElement | null = this; node; node = node.parent) if (node.hidden) return;
@@ -85,9 +90,16 @@ class FakeDocument {
   visibilityState = 'visible';
   body = new FakeElement('body');
   activeElement: FakeElement = this.body;
+  /** Elements the test puts on the page, by the selector or id inbox.js looks them up with. */
+  found = new Map<string, FakeElement>();
   createElement(tag: string) { return new FakeElement(tag); }
   addEventListener() {}
+  querySelector(selector: string) { return this.found.get(selector) ?? null; }
+  getElementById(id: string) { return this.found.get(`#${id}`) ?? null; }
 }
+
+/** What inbox.js passes to new Notification (inbox-notify-model.js). */
+type Options = { tag: string; body: string; requireInteraction: boolean; lang?: string; timestamp?: number; icon: string; badge: string };
 
 /** The browser's Notification class: permission, a permission prompt answered by the test, and every notification made. */
 class FakeNotification {
@@ -100,10 +112,10 @@ class FakeNotification {
     });
   }
   title: string;
-  options: { tag: string };
+  options: Options;
   closed = 0;
   onclick: null | (() => void) = null;
-  constructor(title: string, options: { tag: string }) {
+  constructor(title: string, options: Options) {
     this.title = title;
     this.options = options;
     FakeNotification.made.push(this);
@@ -125,16 +137,41 @@ const core = {
     for (const child of children.flat()) if (child !== null && child !== undefined) node.append(child as FakeElement | string);
     return node;
   },
-  api: async () => ({}),
+  api: async (_method: string, path: string) => (path === '/api/agents' ? { agents: [{ id: 'claude', label: 'Claude Code' }] } : {}),
+  lang: 'en',
+  /** The active terminal (terminals.js activeTerminalId). */
+  active: null as string | null,
+  /** core.js on(): the handlers inbox.js registers, by event. */
+  handlers: new Map<string, (value: unknown) => unknown>(),
+  on: (name: string, fn: (value: unknown) => unknown) => { core.handlers.set(name, fn); },
   prefs: { read: (key: string, fallback: unknown) => (stored.has(key) ? stored.get(key) : fallback), write: (key: string, value: unknown) => stored.set(key, value) },
   session: { token: null as string | null, expire() {} },
   /** The inbox slot of the current page. */
   host: null as FakeElement | null,
   slot: () => { core.host = doc.createElement('section'); core.host.parent = doc.body; return core.host; },
-  terminals: [] as Array<{ id: string }>,
+  terminals: [] as Array<{ id: string; kind?: string; agent?: string }>,
   activated: [] as string[],
 };
 const focused: string[] = [];
+
+/** The notification window's timers (setTimeout with NOTIFY_WINDOW_MS), held for the test; any other timer runs. */
+const windows = new Map<object, () => void>();
+const realSetTimeout = globalThis.setTimeout;
+const realClearTimeout = globalThis.clearTimeout;
+(globalThis as any).setTimeout = (fn: () => void, ms?: number, ...rest: unknown[]) => {
+  if (ms !== NOTIFY_WINDOW_MS) return realSetTimeout(fn, ms, ...rest);
+  const id = { unref() { return id; } };
+  windows.set(id, fn);
+  return id;
+};
+(globalThis as any).clearTimeout = (id: any) => (windows.delete(id) ? undefined : realClearTimeout(id));
+/** Ends the open notification window: what it collected notifies now. */
+function endWindow() {
+  const due = [...windows.values()];
+  windows.clear();
+  for (const fn of due) fn();
+}
+
 Object.assign(globalThis, { __inboxCore: core, CSS: { escape: (s: string) => s }, window: { focus: () => focused.push('window') } });
 
 /** The inbox stream inbox.js reads (GET /api/inbox/stream): `send(items)` writes one NDJSON message. */
@@ -161,6 +198,10 @@ async function boot({ permission = 'default', on = false, stream = false } = {})
   core.session.token = stream ? 'token' : null;
   core.terminals = [];
   core.activated = [];
+  core.lang = 'en';
+  core.active = null;
+  core.handlers.clear();
+  windows.clear();
   focused.length = 0;
   const feed = stream ? fakeStream() : null;
   const inbox = await import(`${new URL('features/inbox.js', publicDir).href}?boot=${++boots}`);
@@ -258,6 +299,8 @@ test('the view: one card, one notification, closed when the card leaves; a stale
   feed!.send([card('t1', 'error', T1)]);
   feed!.send([card('t1', 'blocked', T2)]);
   await settle();
+  assert.equal(FakeNotification.made.length, 0, 'nothing before the window ends');
+  endWindow();
   assert.deepEqual(FakeNotification.made.map((n) => [n.options.tag, n.closed]), [[`mirador-inbox:t1:${T0}`, 0]], 'blocked → error → blocked: one notification, still open');
 
   const [notice] = FakeNotification.made;
@@ -266,6 +309,7 @@ test('the view: one card, one notification, closed when the card leaves; a stale
 
   feed!.send([card('t2', 'blocked', T2)]);
   await settle();
+  endWindow();
   const [, second] = FakeNotification.made;
   core.terminals = [];
   feed!.send([]); // answered and its terminal closed
@@ -274,4 +318,45 @@ test('the view: one card, one notification, closed when the card leaves; a stale
   second.close = () => { throw new Error('already closed'); };
   assert.doesNotThrow(() => second.onclick!());
   assert.deepEqual([focused, core.activated], [['window', 'window'], ['t1']], 'the stale click focuses Mirador and opens nothing');
+});
+
+// The window, through the view.
+
+const question = (terminalId: string, rel = 'web/mi-proyecto', since = T0) => ({ ...card(terminalId, 'blocked', since), rel, label: 'Choice awaiting input', detail: 'Which database should I use?' });
+
+/** A page with notifications on, the stream's baseline sent and terminal t1 an agent (Claude Code). */
+async function live() {
+  const { feed } = await boot({ permission: 'granted', on: true, stream: true });
+  core.terminals = [{ id: 't1', kind: 'agent', agent: 'claude' }];
+  feed!.send([]);
+  await settle();
+  return feed!;
+}
+
+test('the view: a card the user opens before the window ends, or notifications turned off inside it, show nothing', async () => {
+  const feed = await live();
+  feed.send([question('t1')]);
+  await settle();
+  core.active = 't1';
+  endWindow();
+  assert.equal(FakeNotification.made.length, 0, 'he is looking at it');
+
+  const again = await live();
+  again.send([question('t1')]);
+  await settle();
+  control().button.click();
+  await settle();
+  assert.equal(control().status.textContent, 'inbox.notify.status.off');
+  endWindow();
+  assert.equal(FakeNotification.made.length, 0, 'turned off inside the window');
+});
+
+test('the view: a browser that refuses the notification when the window ends: the control says notifications are not available', async () => {
+  const feed = await live();
+  feed.send([question('t1')]);
+  await settle();
+  (globalThis as any).Notification = class { constructor() { throw new TypeError('Illegal constructor'); } };
+  endWindow();
+  const { button, status } = control();
+  assert.deepEqual([status.textContent, button.hidden], ['inbox.notify.status.unsupported', true]);
 });

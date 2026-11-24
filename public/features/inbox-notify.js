@@ -13,13 +13,22 @@
 // finished turn), the notification this page showed for it is closed; a later wait is a new card
 // and may notify again. After a reload the old notifications are not known and stay as they are.
 // What already waits when the page opens, or while notifications are off, is taken as known and
-// never notifies later. A burst (GROUP_AT or more new cards in one message) shows one notification
-// for all of them, closed when the last of them leaves; what each says is inbox-notify-model.js.
+// never notifies later.
+// The window: the server sends one stream message per change, so agents that start waiting at
+// almost the same moment arrive one message each. With `windowMs` (inbox.js passes NOTIFY_WINDOW_MS,
+// 1.5 s) the page collects the new cards from the first of them until the window ends, then
+// notifies: fewer than GROUP_AT one by one, GROUP_AT (3) or more as one burst notification, closed
+// when the last of them leaves. A card that leaves inside the window, or that the user opens (or
+// looked at when it arrived), is never notified; notifications turned off or blocked by then show
+// nothing. Without `windowMs` each message notifies at once. What each says is inbox-notify-model.js.
 
 import { cardNotification, GROUP_AT, groupNotification } from './inbox-notify-model.js';
 
 /** The prefs key (localStorage `mirador.inboxNotify`). */
 export const NOTIFY_PREF = 'inboxNotify';
+
+/** How long the page collects new cards before it notifies (inbox.js passes it as `windowMs`). */
+export const NOTIFY_WINDOW_MS = 1500;
 
 /** One waiting episode: the terminal and when it started waiting (tests key what they saw by it; cards are keyed by terminal). */
 export const episodeKey = (item) => `${item.terminalId}\u0000${item.since}`;
@@ -50,8 +59,23 @@ const notifies = (item) => item.kind !== 'finished';
  * `skip(item)` true for one the user is looking at (handled, never notified).
  * - `showGroup(items)` (optional): shows one notification for a burst of GROUP_AT or more new
  *   cards, as `show` does; without it every card gets its own.
+ * - `windowMs` (optional, default 0): how long new cards are collected before they notify
+ *   (NOTIFY_WINDOW_MS in the page); 0 notifies with each message, and receive returns what it showed.
+ *   `setTimer(fn, ms)`/`clearTimer(id)` run the window (default setTimeout/clearTimeout).
+ * - `onRefused()` (optional): the browser refused a notification at the window's end, so status()
+ *   now reads 'unsupported' (the page redraws its control).
  */
-export function createInboxNotifier({ api, read, write, show, showGroup }) {
+export function createInboxNotifier({
+  api,
+  read,
+  write,
+  show,
+  showGroup,
+  windowMs = 0,
+  setTimer = (fn, ms) => setTimeout(fn, ms),
+  clearTimer = (id) => clearTimeout(id),
+  onRefused = () => {},
+}) {
   let enabled = read() === true;
   let broken = false;
   /** Card keys in the last message; null until the first one (the baseline). */
@@ -60,6 +84,12 @@ export function createInboxNotifier({ api, read, write, show, showGroup }) {
   const open = new Map();
   /** The last burst notification: a new burst replaces it in the browser, under the same tag. */
   let burst = null;
+  /** Card key → a new card waiting for the window to end, as it first showed up (so its tag is the card's start). */
+  const pending = new Map();
+  /** The window's timer, while one runs. */
+  let timer = null;
+  /** The last message's `skip`: whether the user is looking at a card, asked again when the window ends. */
+  let skipping = () => false;
   const permission = () => (api ? api.permission : 'denied');
 
   const status = () => {
@@ -75,6 +105,49 @@ export function createInboxNotifier({ api, read, write, show, showGroup }) {
       if (answer && typeof answer.then === 'function') answer.then(resolve, () => resolve('default'));
     });
 
+  /** Ends the window without notifying: what it collected is dropped. */
+  const drop = () => {
+    pending.clear();
+    if (timer) clearTimer(timer.id);
+    timer = null;
+  };
+
+  /** Shows `due` (new cards nobody is looking at): one burst notification, or one each; → the ones shown. */
+  const notify = (due) => {
+    if (showGroup && due.length >= GROUP_AT) {
+      const notice = showGroup(due);
+      if (!notice) return refused([]);
+      // The browser replaced the last burst's notification: closing it now could close this one.
+      for (const [key, shown] of open) if (shown === burst) open.delete(key);
+      burst = notice;
+      if (typeof notice.close === 'function') for (const item of due) open.set(cardKey(item), notice);
+      return due;
+    }
+    const shown = [];
+    for (const item of due) {
+      const notice = show(item);
+      if (!notice) return refused(shown);
+      if (typeof notice.close === 'function') open.set(cardKey(item), notice);
+      shown.push(item);
+    }
+    return shown;
+  };
+
+  /** The browser threw on new Notification: from now on notifications read as unsupported. */
+  const refused = (shown) => {
+    broken = true;
+    onRefused();
+    return shown;
+  };
+
+  /** The window ends: what it collected notifies, unless notifications are no longer on or the user is looking at it. */
+  const flush = () => {
+    timer = null;
+    const due = [...pending.values()].filter((item) => !skipping(item));
+    pending.clear();
+    return status() === 'on' ? notify(due) : [];
+  };
+
   return {
     status,
     async toggle() {
@@ -82,6 +155,7 @@ export function createInboxNotifier({ api, read, write, show, showGroup }) {
       if (status() === 'on') {
         enabled = false;
         write(false);
+        drop();
         return status();
       }
       if (permission() === 'denied') return 'denied';
@@ -99,33 +173,24 @@ export function createInboxNotifier({ api, read, write, show, showGroup }) {
         open.delete(key);
         if (![...open.values()].includes(notice)) quietly(() => notice.close());
       }
+      // A card that left inside the window is never notified.
+      for (const key of pending.keys()) if (!current.has(key)) pending.delete(key);
       const fresh = known ? [...current].filter(([key]) => !known.has(key)).map(([, item]) => item) : [];
       known = new Set(current.keys());
-      if (status() !== 'on') return [];
-      const due = fresh.filter((item) => !skip(item));
-      if (showGroup && due.length >= GROUP_AT) {
-        const notice = showGroup(due);
-        if (!notice) {
-          broken = true;
-          return [];
-        }
-        // The browser replaced the last burst's notification: closing it now could close this one.
-        for (const [key, shown] of open) if (shown === burst) open.delete(key);
-        burst = notice;
-        if (typeof notice.close === 'function') for (const item of due) open.set(cardKey(item), notice);
-        return due;
+      if (status() !== 'on') {
+        drop();
+        return [];
       }
-      const shown = [];
-      for (const item of due) {
-        const notice = show(item);
-        if (!notice) {
-          broken = true;
-          break;
-        }
-        if (typeof notice.close === 'function') open.set(cardKey(item), notice);
-        shown.push(item);
+      skipping = skip;
+      // One the user is looking at as it arrives is handled; one opened before the window ends is skipped then.
+      for (const item of fresh) if (!skip(item)) pending.set(cardKey(item), item);
+      if (!pending.size) {
+        drop();
+        return [];
       }
-      return shown;
+      if (windowMs <= 0) return flush();
+      if (!timer) timer = { id: setTimer(flush, windowMs) };
+      return [];
     },
   };
 }

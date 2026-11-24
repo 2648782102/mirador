@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createInboxNotifier, episodeKey, NOTIFY_PREF, notificationFor, showGroupNotification, showNotification } from '../public/features/inbox-notify.js';
+import { createInboxNotifier, episodeKey, NOTIFY_PREF, NOTIFY_WINDOW_MS, notificationFor, showGroupNotification, showNotification } from '../public/features/inbox-notify.js';
 
 const item = (terminalId: string, kind: string, since: string, extra: Record<string, unknown> = {}) => ({ terminalId, workspaceId: 'dev', rel: 'api', title: 'api', kind, label: 'Awaiting input', detail: null, since, activity: null, ...extra });
 const T0 = '2026-10-28T10:00:00.000Z';
@@ -404,4 +404,192 @@ test('showGroupNotification: the burst text; a click focuses Mirador, opens the 
   notice.close = () => { throw new Error('already closed'); };
   assert.doesNotThrow(() => notice.onclick!());
   assert.deepEqual(calls, ['focus', 'inbox']);
+});
+
+// The window: the server sends one stream message per change, so cards that start waiting at almost
+// the same moment arrive one message each. The page collects new cards for NOTIFY_WINDOW_MS (1.5 s)
+// from the first of them, then notifies: 1 or 2 one by one, GROUP_AT (3) or more as one burst.
+
+/**
+ * A notifier on the 1.5 s window whose timer the test runs (`tick()` ends the window), with `show`
+ * and `showGroup` making fake-class notifications. `stored` is the saved choice.
+ */
+function windowed(options: { api?: ReturnType<typeof fakeApi>; stored?: boolean; show?: (item: any) => unknown } = {}) {
+  FakeNotification.made = [];
+  const api = options.api ?? fakeApi('granted');
+  let stored = options.stored ?? true;
+  const timers = new Map<number, () => void>();
+  const started: number[] = [];
+  let next = 0;
+  const singles: string[] = [];
+  const groups: string[][] = [];
+  const counts = { refused: 0 };
+  const notifier = createInboxNotifier({
+    api,
+    read: () => stored,
+    write: (value: boolean) => { stored = value; },
+    show: options.show ?? ((shownItem: any) => {
+      singles.push(shownItem.terminalId);
+      return new FakeNotification(shownItem.terminalId, { tag: `mirador-inbox:${shownItem.terminalId}:${shownItem.since}`, body: '' });
+    }),
+    showGroup: (list: any[]) => {
+      groups.push(list.map((shownItem) => shownItem.terminalId));
+      return new FakeNotification(`${list.length}`, { tag: 'mirador-inbox:group', body: '' });
+    },
+    windowMs: NOTIFY_WINDOW_MS,
+    setTimer: (fn: () => void, ms: number) => { started.push(ms); timers.set(++next, fn); return next; },
+    clearTimer: (id: number) => { timers.delete(id); },
+    onRefused: () => { counts.refused++; },
+  });
+  notifier.receive([]);
+  const tick = () => {
+    const due = [...timers.values()];
+    timers.clear();
+    for (const fn of due) fn();
+  };
+  return { notifier, api, singles, groups, timers, started, counts, tick };
+}
+
+const cards = (ids: string[], kind = 'blocked', since = T0) => ids.map((id) => item(id, kind, since));
+
+test('the window is 1.5 s; without windowMs the notifier notifies at once (callers before the window)', () => {
+  assert.equal(NOTIFY_WINDOW_MS, 1500);
+  const { notifier, shown } = setup({ stored: true });
+  notifier.receive([]);
+  assert.deepEqual(notifier.receive(cards(['t1'])).map((i: any) => i.terminalId), ['t1']);
+  assert.equal(shown.length, 1);
+});
+
+test('the window: 3 cards in 3 separate messages within 1.5 s give 1 group, shown when the window ends', () => {
+  const { notifier, singles, groups, started, tick } = windowed();
+  const [a, b, c] = cards(['t1', 't2', 't3']);
+  assert.deepEqual(notifier.receive([a]), [], 'nothing is shown inside the window');
+  assert.deepEqual(notifier.receive([a, b]), []);
+  assert.deepEqual(notifier.receive([a, b, c]), []);
+  assert.deepEqual([singles, groups, FakeNotification.made.length], [[], [], 0], 'nothing yet');
+  assert.deepEqual(started, [1500], 'one window, from the first new card: it does not slide');
+  tick();
+  assert.deepEqual([singles, groups], [[], [['t1', 't2', 't3']]]);
+  notifier.receive([a, b, c]);
+  assert.deepEqual([started.length, groups.length], [1, 1], 'the same snapshot after the window starts nothing');
+});
+
+test('the window: 2 cards give 2 singles after the window; a later card opens a new window', () => {
+  const { notifier, singles, groups, started, tick } = windowed();
+  const [a, b, c] = cards(['t1', 't2', 't3']);
+  notifier.receive([a]);
+  notifier.receive([a, b]);
+  assert.deepEqual(singles, []);
+  tick();
+  assert.deepEqual([singles, groups], [['t1', 't2'], []]);
+  notifier.receive([a, b, c]);
+  assert.deepEqual(singles, ['t1', 't2'], 'the third card waits for its own window');
+  tick();
+  assert.deepEqual([singles, groups, started], [['t1', 't2', 't3'], [], [1500, 1500]], 'a card after the window is not grouped with the earlier ones');
+});
+
+test('the window: a card that leaves inside it is never shown; an empty window ends with nothing', () => {
+  const { notifier, singles, groups, timers, tick } = windowed();
+  const [a, b, c] = cards(['t1', 't2', 't3']);
+  notifier.receive([a, b, c]);
+  notifier.receive([b, c]); // t1 answered at once
+  tick();
+  assert.deepEqual([singles, groups], [['t2', 't3'], []], 'two left: two singles, not a group');
+
+  const again = windowed();
+  again.notifier.receive(cards(['t4']));
+  again.notifier.receive([]);
+  assert.equal(again.timers.size, 0, 'nothing left to notify: the window is cancelled');
+  again.tick();
+  assert.deepEqual(again.singles, []);
+  assert.equal(timers.size, 0);
+});
+
+test('the window: a card shows as it first appeared; a change or the same snapshot inside the window does not queue it again', () => {
+  const { notifier, tick } = windowed();
+  notifier.receive([item('t1', 'blocked', T0)]);
+  notifier.receive([item('t1', 'error', T1, { label: 'Error' })]);
+  notifier.receive([item('t1', 'error', T1, { label: 'Error' })]);
+  tick();
+  assert.deepEqual(FakeNotification.made.map((n) => n.options.tag), [`mirador-inbox:t1:${T0}`], 'one notification, tagged by the card as it started');
+});
+
+test('the window: notifications turned off inside it show nothing, and what it held never notifies later', async () => {
+  const { notifier, singles, groups, timers, tick } = windowed();
+  notifier.receive(cards(['t1', 't2', 't3']));
+  assert.equal(await notifier.toggle(), 'off');
+  tick();
+  assert.deepEqual([singles, groups, timers.size], [[], [], 0]);
+  assert.equal(await notifier.toggle(), 'on');
+  notifier.receive(cards(['t1', 't2', 't3']));
+  tick();
+  assert.deepEqual([singles, groups], [[], []], 'known before it was turned on again');
+});
+
+test('the window: notifications blocked in the browser before it ends show nothing; the window is dropped', () => {
+  const { notifier, api, singles, groups, tick } = windowed();
+  notifier.receive(cards(['t1', 't2']));
+  api.permission = 'denied';
+  tick();
+  assert.equal(notifier.status(), 'denied');
+  api.permission = 'granted';
+  tick();
+  notifier.receive(cards(['t1', 't2', 't3']));
+  tick();
+  assert.deepEqual([singles, groups], [['t3'], []], 'only the card that came after');
+});
+
+test('the window: a card the user opened before it ends is skipped; one in view when it arrived counts as handled', () => {
+  const { notifier, singles, tick } = windowed();
+  const [a, b, c] = cards(['t1', 't2', 't3']);
+  notifier.receive([a, b]);
+  notifier.receive([a, b], (i: any) => i.terminalId === 't1'); // he opened t1
+  tick();
+  assert.deepEqual(singles, ['t2']);
+  notifier.receive([a, b, c], (i: any) => i.terminalId === 't3');
+  notifier.receive([a, b, c]); // he switched away from t3 inside the window
+  tick();
+  assert.deepEqual(singles, ['t2'], 't3 was in view when it arrived');
+});
+
+test('the window: a browser that refuses the notification at the end counts as unsupported, and says so', () => {
+  const { notifier, counts, tick } = windowed({ show: () => null });
+  notifier.receive(cards(['t1']));
+  assert.equal(notifier.status(), 'on');
+  tick();
+  assert.deepEqual([notifier.status(), counts.refused], ['unsupported', 1]);
+  notifier.receive(cards(['t1', 't2']));
+  tick();
+  assert.equal(counts.refused, 1, 'nothing is shown, so nothing is refused again');
+});
+
+test('a burst arriving while singles are open leaves them; each closes with its own cards', () => {
+  const { notifier, tick } = windowed();
+  const [t1, t2, t3, t4, t5] = cards(['t1', 't2', 't3', 't4', 't5']);
+  notifier.receive([t1, t2]);
+  tick();
+  notifier.receive([t1, t2, t3, t4, t5]);
+  tick();
+  const [s1, s2, group] = FakeNotification.made;
+  assert.deepEqual([s1.title, s2.title, group.title], ['t1', 't2', '3']);
+  notifier.receive([t2, t3, t4, t5]);
+  assert.deepEqual([s1.closed, s2.closed, group.closed], [1, 0, 0], 't1 left: only its single closes');
+  notifier.receive([t2, t5]);
+  assert.deepEqual([s2.closed, group.closed], [0, 0], 'one of its cards still waits');
+  notifier.receive([t2]);
+  assert.deepEqual([s2.closed, group.closed], [0, 1], 'the last of its cards left');
+  notifier.receive([]);
+  assert.deepEqual([s1.closed, s2.closed, group.closed], [1, 1, 1]);
+});
+
+test('a burst never asks for permission and shows nothing while off', async () => {
+  const { notifier, api, singles, groups, started, tick } = windowed({ api: fakeApi('default', 'granted'), stored: false });
+  notifier.receive(cards(['t1', 't2', 't3']));
+  tick();
+  assert.deepEqual([singles, groups, started, api.asked], [[], [], [], 0], 'off: no window, nothing shown, nothing asked');
+  assert.equal(await notifier.toggle(), 'on');
+  assert.equal(api.asked, 1, 'the click asks, once');
+  notifier.receive(cards(['t1', 't2', 't3']));
+  tick();
+  assert.deepEqual([singles, groups, api.asked], [[], [], 1], 'what arrived while off is known');
 });
