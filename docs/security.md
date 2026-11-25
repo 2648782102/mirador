@@ -50,6 +50,8 @@ Risks:
 
 The "Te esperan" inbox works in a phone's browser through the same tunnel. The phone needs an SSH client that can forward a local port; the server, its address and its checks stay exactly as above.
 
+The phone inbox is experimental in 0.2.0. What was measured on an iPhone, and how to get out of **Reconectando… / Reconnecting…**, are in [The phone inbox is experimental](attention.md#the-phone-inbox-is-experimental).
+
 1. In the phone's SSH client, forward the same port, bound to `127.0.0.1` on the phone:
 
    ```sh

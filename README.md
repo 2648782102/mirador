@@ -34,7 +34,7 @@ Other tools run coding agents side by side too. The table lists what each one's 
 
 | | Form | Platforms | License | Agents in git worktrees | Remote machines and phone |
 |---|---|---|---|---|---|
-| **Mirador** | Local web dashboard in a browser window | Linux, WSL2; macOS experimental | Apache-2.0 | No | No app; you can [reach it through an `ssh -L` tunnel](docs/security.md#opening-mirador-from-another-machine), and the inbox is usable on a phone's browser through the same tunnel |
+| **Mirador** | Local web dashboard in a browser window | Linux, WSL2; macOS experimental | Apache-2.0 | No | No app; you can [reach it through an `ssh -L` tunnel](docs/security.md#opening-mirador-from-another-machine), and the inbox is usable on a phone's browser through the same tunnel ([experimental](docs/attention.md#the-phone-inbox-is-experimental)) |
 | [Herdr](https://herdr.dev) | Desktop app; Herdr TUI in the terminal | macOS (Apple silicon), Linux, Windows | Apache-2.0 | — | SSH; iPhone, iPad and Android apps |
 | [Paradev](https://paradev.com) | Desktop app, plus CLI, SDK and MCP server | macOS; Linux experimental; no Windows yet | MIT | Yes | iPhone and iPad app |
 | [Claude Code Desktop](https://code.claude.com/docs/en/desktop) | The Code tab of the Claude desktop app | macOS, Windows; Linux beta (Ubuntu, Debian) | — | Optional, per session | SSH sessions; cloud sessions in the Claude mobile app |
