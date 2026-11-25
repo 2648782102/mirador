@@ -3,7 +3,11 @@
 All notable changes to Mirador, written for the people who run it. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## [0.2.0-rc.2] - 2026-11-25
+
+Second release candidate for 0.2.0, published as a pre-release. It adds the phone inbox, as an experimental
+feature, with the fixes from a test on a real iPhone (#67), and clearer browser notifications.
+`scripts/bootstrap.sh` does not pin it.
 
 ### Added
 
@@ -208,5 +212,6 @@ Linux is supported, macOS is experimental, and Windows works through WSL2. Mirad
 - CI scans the git history for secrets with gitleaks.
 - No telemetry and no accounts.
 
+[0.2.0-rc.2]: https://github.com/mata-2p/mirador/releases/tag/v0.2.0-rc.2
 [0.2.0-rc.1]: https://github.com/mata-2p/mirador/releases/tag/v0.2.0-rc.1
 [0.1.0]: https://github.com/mata-2p/mirador/releases/tag/v0.1.0
