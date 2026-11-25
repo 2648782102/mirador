@@ -49,14 +49,14 @@ The bridge reports three cases, kept apart: a gentle-ai blocker (`herdr:blocked`
 
 ### The phone inbox is experimental
 
-In 0.2.0 the phone inbox is experimental. It was tested on one phone: an iPhone 11 with iOS 27.0.1 and Safari, reaching Mirador through an iOS SSH app (Termius, free plan) with a local forward of port 4545, as in [docs/security.md](security.md#on-a-phone). It has not been tried on Android yet (#71).
+In 0.2.0 the phone inbox is experimental. It was tested on one phone: an iPhone 11 with iOS 27.0.1 and Safari, reaching Mirador through an iOS SSH app (Termius) with a local forward of port 4545, as in [docs/security.md](security.md#on-a-phone). It has not been tried on Android yet (#71).
 
 **What was measured.** On that phone:
 
 - Switching to another app for a short while, or locking and unlocking the phone, keeps the header on **En vivo / Live**.
 - Closing the host terminal where you ran `mirador link` does not end the phone's session.
 - After about 4 minutes outside Safari, the header showed **Reconectando… / Reconnecting…**: iOS had stopped the SSH app's forward in the background. Turning the forward back on in the SSH app brought **Live** back, without a new link.
-- Once, after about 30 minutes away, the page asked for a new link. The cause is not confirmed.
+- Once, after about 30 minutes away, the page asked for a new link. The cause is not confirmed (#95).
 
 iOS does not keep an SSH app's forward running in the background for long. A way to reach the inbox that does not depend on it is a design issue (#72).
 
