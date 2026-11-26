@@ -3,6 +3,17 @@
 All notable changes to Mirador, written for the people who run it. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- On Linux x64 and arm64 with glibc 2.28 or newer, the one-line install (`curl … bootstrap.sh | sh`) installs the
+  prebuilt release of 0.2.0 instead of building Mirador from source: it needs no git, Node, pnpm or compiler, and
+  it checks the archive against the sha256 written in `scripts/bootstrap.sh` before unpacking it. When
+  `~/.local/share/mirador` is already a git clone from an earlier one-line install, running the line again leaves the
+  clone as it is, stops and says how to keep updating it from source or move it away to switch to the prebuilt
+  release. macOS, other systems and glibc older than 2.28 keep installing from source.
+
 ## [0.2.0] - 2026-11-26
 
 0.2.0 adds the phone inbox, as an experimental feature, `mirador link` and signing out the other windows, clearer
@@ -243,6 +254,7 @@ Linux is supported, macOS is experimental, and Windows works through WSL2. Mirad
 - CI scans the git history for secrets with gitleaks.
 - No telemetry and no accounts.
 
+[Unreleased]: https://github.com/mata-2p/mirador/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/mata-2p/mirador/releases/tag/v0.2.0
 [0.2.0-rc.2]: https://github.com/mata-2p/mirador/releases/tag/v0.2.0-rc.2
 [0.2.0-rc.1]: https://github.com/mata-2p/mirador/releases/tag/v0.2.0-rc.1
