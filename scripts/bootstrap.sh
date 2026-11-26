@@ -205,9 +205,9 @@ main() {
   # lines in the release's notes (scripts/release/pins.sh); an empty sha256 leaves its platform on the
   # install from source. They are set here, not read from the environment, so only a reviewed change to this
   # script can change what it downloads.
-  MIRADOR_VERSION=""
-  MIRADOR_SHA256_LINUX_X64=""
-  MIRADOR_SHA256_LINUX_ARM64=""
+  MIRADOR_VERSION="0.2.0"
+  MIRADOR_SHA256_LINUX_X64="c534887213a3beaa0401fe469b70f70a6d70aee612d452bcb8a96656e05732d9"
+  MIRADOR_SHA256_LINUX_ARM64="42cdb3647214714dc7432d8317ed472d64570f39a43b8f61e9680befe49accd4"
 
   repo="${MIRADOR_REPO_URL:-https://github.com/mata-2p/mirador.git}"
   dir="${XDG_DATA_HOME:-$HOME/.local/share}/mirador"
