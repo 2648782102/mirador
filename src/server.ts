@@ -305,6 +305,7 @@ async function main(): Promise<void> {
     workspaces,
     resolveFolder: (ws, rel) => workspaces.resolve(typeof ws === 'string' ? ws : '', typeof rel === 'string' ? rel : ''),
     terminals,
+    canonicalToken: (token) => sessions.canonical(token),
     engram,
     today: () => formatDay(new Date(), ctx.config.timeZone),
     parseDate: (value) => parseDay(value, ctx.config.timeZone),
