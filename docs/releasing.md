@@ -95,8 +95,52 @@ On the draft release (**Releases**), before publishing it:
    current distribution), ran its doctor and started its server. To try one by hand as well, unpack it on a
    clean Linux system with no Node, pnpm or compiler and run `node/bin/node src/doctor.ts`, then
    `bin/mirador`.
-3. The first release with archives is shown to the owner as a draft, before anyone publishes it.
-4. Publish it: **Edit › Publish release**.
+3. Check the draft's tag. It must be the version's tag, never the `untagged-…` placeholder GitHub gives a
+   draft whose tag was not set:
+
+   ```sh
+   gh api repos/mata-2p/mirador/releases --jq '.[] | select(.draft) | {name, tag_name, target_commitish}'
+   ```
+
+   A `tag_name` of `v0.2.0` is right; anything starting with `untagged-` is not. Edit a draft's notes with
+   `gh release edit <tag> --notes-file …`, or send `tag_name` in an API `PATCH`; never send `body` alone,
+   which is how v0.2.0 was first published on `untagged-4f2e33e6ff94282703fe`.
+4. The first release with archives is shown to the owner as a draft, before anyone publishes it.
+5. Publish it: **Edit › Publish release**.
+
+## A release published on the wrong tag
+
+v0.2.0 was first published on `untagged-4f2e33e6ff94282703fe`, the same commit, instead of `v0.2.0`. Its draft
+had been edited through the API with a `PATCH` that sent only `body`, which left the placeholder as `tag_name`;
+publishing then created that tag. `releases/download/v0.2.0/…`, which `scripts/bootstrap.sh` downloads from,
+answered 404.
+
+What is locked once an immutable release is published:
+
+- Its assets and its tag. They cannot be changed or deleted for reuse: the tag name of a deleted immutable
+  release can never be used again.
+- Its title, notes and the pre-release and latest flags stay editable.
+- A tag that never had an immutable release can still be used.
+
+Getting a correct release out:
+
+1. Check the archives of the wrong release against the sums and attestations, the same way as step 1 of
+   [Reviewing the draft](#reviewing-the-draft). If they are the intended artifacts, the new release carries the
+   same files and their sha256 do not change.
+2. Create a draft on the right tag with those files, then review it as usual:
+
+   ```sh
+   gh release create v0.2.0 --draft --verify-tag --title "Mirador v0.2.0" \
+     --notes-file notes.md dist/mirador-*.tar.gz dist/SHA256SUMS
+   ```
+3. Before opening the promotion PR, check that the download URL answers:
+
+   ```sh
+   curl -fsSL https://github.com/mata-2p/mirador/releases/download/v0.2.0/SHA256SUMS
+   ```
+
+4. Decide separately what to do with the release on the wrong tag: leaving it published keeps a second set of
+   the same files under a name nobody downloads, and it may show up as an older release in **Releases**.
 
 ## Release candidates
 
