@@ -3,38 +3,50 @@
 All notable changes to Mirador, written for the people who run it. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.2.0-rc.2] - 2026-11-25
+## [0.2.0] - 2026-11-26
 
-Second release candidate for 0.2.0, published as a pre-release. It adds the phone inbox, as an experimental
-feature, with the fixes from a test on a real iPhone (#67), and clearer browser notifications.
-`scripts/bootstrap.sh` does not pin it.
+0.2.0 adds the phone inbox, as an experimental feature, `mirador link` and signing out the other windows, clearer
+browser notifications, **Dónde quedó / Where it left off** without Engram for Claude Code, file links in terminal
+output and a sidebar tree that follows the terminal. It also lays the groundwork for installing on Linux without
+compiling: prebuilt archives, which `scripts/bootstrap.sh` does not pin yet; a later change pins a release in it.
+It was rehearsed as the pre-releases [0.2.0-rc.1] and [0.2.0-rc.2], and everything they shipped is in this section.
 
 ### Added
 
-- On a phone (under 600 px wide), Mirador opens on the **Te esperan / Waiting for you** inbox, full screen, as an experimental feature: it was tested on one iPhone, and [The phone inbox is experimental](docs/attention.md#the-phone-inbox-is-experimental) gives what was measured, how to get out of **Reconectando… / Reconnecting…** and the limits of finger scrolling. It has a header that stays on top with the count and **En vivo / Live** or **Reconectando… / Reconnecting…**, cards that read the reason first, and 44 px touch targets on a touch screen. A card opens its terminal full screen with a key bar (Esc, Tab, the arrows, Enter). See [Opening Mirador from another machine](docs/security.md#opening-mirador-from-another-machine) for the `ssh -L` tunnel (#41).
+- On a phone (under 600 px wide), Mirador opens on the **Te esperan / Waiting for you** inbox, full screen, as an
+  experimental feature: it was tested on one iPhone, and
+  [The phone inbox is experimental](docs/attention.md#the-phone-inbox-is-experimental) gives what was measured, how
+  to get out of **Reconectando… / Reconnecting…** and the limits of finger scrolling. The inbox covers the whole
+  screen, also when Seguimiento was on screen. It has a header that stays on top with the count and **En vivo /
+  Live** or **Reconectando… / Reconnecting…**, cards that read the reason first, and 44 px touch targets on a touch
+  screen. The header never says **En vivo / Live** over a dead connection: after 60 s with no line from the server
+  (it sends one every 25 s) it shows **Reconectando… / Reconnecting…** and the stream reconnects, and a tab that
+  comes back after 60 s or more hidden reconnects at once (#66). See
+  [Opening Mirador from another machine](docs/security.md#opening-mirador-from-another-machine) for the `ssh -L`
+  tunnel (#41, #67).
+- On a phone, a card opens its terminal full screen, also over Seguimiento, with a key bar (Esc, Tab, the arrows,
+  Enter). The key bar and the header follow the terminal on screen: another terminal activated while the view is
+  open takes the keys, and closing the terminal on screen goes back to the inbox instead of typing into another one
+  (#65). A finger dragged over the terminal does what the mouse wheel does on a desktop, and the page does not move.
+  In programs that do not track the mouse, such as Claude Code or a shell, it scrolls the history, and typing or a
+  key-bar key goes back to the end. Programs that track the mouse, such as gentle-shell or fzf --height, get the
+  drag as the mouse wheel. Full-screen programs that do not track it, such as vim or less, get nothing from the
+  drag (#87). A tap opens the keyboard and links. In the full interface a finger still moves the page, and in this
+  view pinch-zoom does not work over the terminal, which uses a 12 px font (#41, #67, #89).
 - `mirador link` prints a fresh one-time link for a phone or another machine, without trying to open a window (#41).
-- **Cerrar sesión en las demás ventanas / Sign out the other windows** under **Ajustes / Settings** signs out every other window and closes its terminals, for a lost phone (#41).
-- Browser notifications say who waits: Mirador's icon, the project and reason as the title ("mi-proyecto · Needs you to choose"), and the question, agent and path in the body (a blocked agent shows only its project and reason, never a command, unless it asks a questionnaire or a choice). A blocker or a dialog stays on screen until you act, unless you turn off **Los avisos que piden respuesta se quedan hasta que actúes / Notices that need an answer stay until you act**; a notification may arrive up to 1.5 s after its card, and 3 or more new cards within 1.5 s share one notification, whose click opens the inbox; and **Discretos / Discreet** mode, off by default, hides the project, question and path for screen sharing. See [Attention inbox](docs/attention.md#attention-inbox) (#76).
-
-### Fixed
-
-- A terminal closed in another window now leaves every open window: its tab goes away, and a phone that shows it goes back to the inbox. The same happens when an agent goes to sleep, and then a short line says so for a few seconds, with Despertar (Wake) to open it again; on the phone it shows above the inbox. Before, the tab stayed on a dead terminal until a reload (#65).
-- Coming back to the tab after 60 s or more hidden while the inbox waits to reconnect now reconnects at once, as described in [Attention and tracking](docs/attention.md), instead of waiting out the backoff of up to 30 s; a shorter hide keeps the wait (#66).
-- On a phone, the key bar and the header follow the terminal on screen: another terminal activated while the view is open takes the keys, and closing the terminal on screen goes back to the inbox instead of typing into another one (#65).
-- On a phone, a finger dragged over a terminal opened from a card now does what the mouse wheel does on a desktop, and the page no longer moves. In programs that do not track the mouse, such as Claude Code or a shell, it scrolls the history, and typing or a key-bar key goes back to the end. Programs that track the mouse, such as gentle-shell or fzf --height, get the drag as the mouse wheel. Full-screen programs that do not track it, such as vim or less, still get nothing from the drag (#87). A tap still opens the keyboard and links. In the full interface a finger still moves the page, and in this view pinch-zoom no longer works over the terminal, which uses a 12 px font (#67, #89).
-- On a phone, the inbox and the terminal opened from a card now cover the whole screen when Seguimiento was on screen. Before, the inbox took the top half and Seguimiento stayed visible under it (#67).
-- A terminal opened in another window after this page loaded now joins it as a tab: when the inbox names it, or when the page shows again. Before, its card said **abierta en otra ventana de Mirador / open in another Mirador window** and a tap did nothing until a reload; now the tap opens it (#67).
-- A terminal used from a phone no longer stays at the phone's width on the desktop when the desktop window never lost the focus: typing or clicking in that terminal on the desktop gives it back the desktop's width, at most once a second (#67).
-- The phone inbox no longer says **En vivo / Live** over a dead connection: after 60 s with no line from the server (it sends one every 25 s) the header shows **Reconectando… / Reconnecting…** and the stream reconnects, and a tab that comes back after 60 s or more hidden reconnects at once (#66).
-
-## [0.2.0-rc.1] - 2026-11-23
-
-Release candidate for 0.2.0, published as a pre-release to rehearse the release and the install from its
-archives before 0.2.0 itself. `scripts/bootstrap.sh` does not pin it.
-
-### Added
-
-- Clicking a terminal's tab, or a grid tile that makes another terminal active, opens its workspace and folders down to its project in the sidebar tree and collapses the rest, without changing the layout Mirador saves. It is on by default; turn it off with **El árbol sigue a la terminal / Tree follows the terminal** under **Ajustes / Settings**.
+- **Cerrar sesión en las demás ventanas / Sign out the other windows** under **Ajustes / Settings** signs out every
+  other window and closes its terminals, for a lost phone (#41).
+- Browser notifications say who waits: Mirador's icon, the project and reason as the title ("mi-proyecto · Needs
+  you to choose"), and the question, agent and path in the body (a blocked agent shows only its project and reason,
+  never a command, unless it asks a questionnaire or a choice). A blocker or a dialog stays on screen until you act,
+  unless you turn off **Los avisos que piden respuesta se quedan hasta que actúes / Notices that need an answer stay
+  until you act**; a notification may arrive up to 1.5 s after its card, and 3 or more new cards within 1.5 s share
+  one notification, whose click opens the inbox; and **Discretos / Discreet** mode, off by default, hides the
+  project, question and path for screen sharing. See [Attention inbox](docs/attention.md#attention-inbox) (#76).
+- Clicking a terminal's tab, or a grid tile that makes another terminal active, opens its workspace and folders down
+  to its project in the sidebar tree and collapses the rest, without changing the layout Mirador saves. It is on by
+  default; turn it off with **El árbol sigue a la terminal / Tree follows the terminal** under **Ajustes /
+  Settings**.
 - A file path in a terminal's output that names a file of its workspace (absolute, `./x`, `../x` or `a/b.ts`, with
   an optional `:line` or `:line:col`) is a link: a click opens the file in the file editor. Only files the editor
   opens are links: not a symlink whose target leaves the workspace, nor a file over 1 MiB.
@@ -42,37 +54,50 @@ archives before 0.2.0 itself. `scripts/bootstrap.sh` does not pin it.
   of your last message, Claude's final message and its latest compaction summary, as Claude Code's hooks hand them
   over (`prompt`, `last_assistant_message`, `compact_summary`), each cut to 16 KiB. The view shows the newer of this
   record's text and Engram's latest session summary (a tie, or a record with only your prompt, keeps Engram's), with
-  your last message above it, and its foot names the source; plain
-  mode shows the record above the git state. The hook sends the text over Mirador's local socket and the server
-  validates and writes it (`~/.local/state/mirador/left-off/`, files 0600). It is plaintext on disk, never sent
-  anywhere and never logged. Records are removed after 30 days, or after the days set in the new config key
-  `leftOffDays`; `leftOff: false` turns the capture off. Mirador does not read Claude Code's configuration.
+  your last message above it, and its foot names the source; plain mode shows the record above the git state. The
+  hook sends the text over Mirador's local socket and the server validates and writes it
+  (`~/.local/state/mirador/left-off/`, files 0600). It is plaintext on disk, never sent anywhere and never logged.
+  Records are removed after 30 days, or after the days set in the new config key `leftOffDays`; `leftOff: false`
+  turns the capture off. Mirador does not read Claude Code's configuration.
 - **Dónde quedó / Where it left off** shows the newer of Claude's final message and its compaction summary, not
   always the final message; a block from the local record has **Olvidar / Forget**, which removes that record after
   a confirmation, as forgetting the folder's sleeping Claude Code agent (chosen as Claude Code or started as the
-  configured `agentCommand`) or removing the workspace now does too; the
-  record also keeps when and why the session ended (`SessionEnd`, stored only); and the workspace **Resumen /
-  Summary** rows use the record the same way as the folder view, answering from it when Engram is down, under a
-  notice that Engram is not responding.
+  configured `agentCommand`) or removing the workspace now does too; the record also keeps when and why the session
+  ended (`SessionEnd`, stored only); and the workspace **Resumen / Summary** rows use the record the same way as the
+  folder view, answering from it when Engram is down, under a notice that Engram is not responding.
 - The groundwork for installing on Linux without compiling. A release workflow builds a prebuilt archive for
-  Linux x64 and arm64 (the official Node 24, Mirador's TypeScript sources as they are, and production
-  `node_modules` with `node-pty` built for glibc 2.28), with `SHA256SUMS` and a build-provenance attestation, and
-  attaches them to a draft release that a maintainer reviews and publishes. `scripts/bootstrap.sh` installs such
-  a release once one is pinned in it, checking the archive against the sha256 written in the script; until then,
-  and on macOS, it installs from source as before. It never overwrites or deletes a git clone in
-  `~/.local/share/mirador`, and it checks for no updates. `bin/mirador` runs the Node bundled in a prebuilt
-  release before any other.
+  Linux x64 and arm64 (the official Node 24, checked against a sha256 pinned per architecture in the workflow,
+  Mirador's TypeScript sources as they are, and production `node_modules` with `node-pty` built for glibc 2.28),
+  checks every archive in clean AlmaLinux 8 (glibc 2.28) and Debian 13 containers in a `smoke` job (doctor, server
+  start, size and timings in the job summary), and only then, with `SHA256SUMS` and a build-provenance
+  attestation, attaches them to a draft release that a maintainer reviews and publishes. `scripts/bootstrap.sh`
+  installs such a release once one is pinned in it, checking the archive against the sha256 written in the script;
+  until then, and on macOS, it installs from source as before. It never overwrites or deletes a git clone in
+  `~/.local/share/mirador`, and it checks for no updates. A first prebuilt install cut off abruptly does not block
+  the next run, which removes the half-done `.download.*` folders it left and goes on; an update says when a
+  running server keeps the previous version until `mirador stop && mirador`. `bin/mirador` runs the Node bundled
+  in a prebuilt release before any other.
 
 ### Changed
 
 - The foot of **Dónde quedó / Where it left off** names Engram when the summary comes from it ("Engram session
   summary · …").
-- `bootstrap.sh`: a first prebuilt install cut off abruptly no longer blocks the next run, which removes the
-  half-done `.download.*` folders it left and goes on; an update says when a running server keeps the previous
-  version until `mirador stop && mirador`.
-- Release: the workflow pins the bundled Node's sha256 per architecture, and a `smoke` job checks every archive
-  in clean AlmaLinux 8 (glibc 2.28) and Debian 13 containers (doctor, server start, size and timings in the job
-  summary) before `publish` can run.
+
+### Fixed
+
+- A terminal closed in another window now leaves every open window: its tab goes away, and a phone that shows it
+  goes back to the inbox. The same happens when an agent goes to sleep, and then a short line says so for a few
+  seconds, with Despertar (Wake) to open it again; on the phone it shows above the inbox. Before, the tab stayed on
+  a dead terminal until a reload (#65).
+- Coming back to the tab after 60 s or more hidden while the inbox waits to reconnect now reconnects at once, as
+  described in [Attention and tracking](docs/attention.md), instead of waiting out the backoff of up to 30 s; a
+  shorter hide keeps the wait (#66).
+- A terminal opened in another window after this page loaded now joins it as a tab: when the inbox names it, or
+  when the page shows again. Before, its card said **abierta en otra ventana de Mirador / open in another Mirador
+  window** and a tap did nothing until a reload; now the tap opens it (#67).
+- A terminal used from a narrower window, such as a phone, no longer stays at that width on the desktop when the
+  desktop window never lost the focus: typing or clicking in that terminal on the desktop gives it back the
+  desktop's width, at most once a second (#67).
 
 ### Documentation
 
@@ -82,10 +107,16 @@ archives before 0.2.0 itself. `scripts/bootstrap.sh` does not pin it.
 - The README's table of what Mirador does adds the **Cambios / Changes** view, browser notifications and the night
   shift, each linked to its description in `docs/`.
 - The README says that what stays on the machine is Mirador itself, not the agents running inside it, names what
-  the full mode's night shift and **Mejorar con IA** send to Claude, and says that `bin/herdr-shim` is a gentle-shell compatibility layer with no relation to the Herdr product.
+  the full mode's night shift and **Mejorar con IA** send to Claude, and says that `bin/herdr-shim` is a
+  gentle-shell compatibility layer with no relation to the Herdr product.
 - `docs/security.md` explains how to open Mirador from another machine through an `ssh -L` tunnel, and its risks.
   The server still listens on `127.0.0.1` only.
-- `docs/releasing.md` tells maintainers how to cut a release, review its draft and pin it in `scripts/bootstrap.sh`.
+- `docs/attention.md` shows a browser notification and its **Discretos / Discreet** form, from the demo workspace
+  (#76), and its section [The phone inbox is experimental](docs/attention.md#the-phone-inbox-is-experimental) gives
+  what was measured on one iPhone, how to get out of **Reconectando… / Reconnecting…** and the limits of finger
+  scrolling.
+- `docs/releasing.md` tells maintainers how to cut a release or a release candidate, review its draft and pin it
+  in `scripts/bootstrap.sh`.
 
 ## [0.1.0] - 2026-11-20
 
@@ -212,6 +243,7 @@ Linux is supported, macOS is experimental, and Windows works through WSL2. Mirad
 - CI scans the git history for secrets with gitleaks.
 - No telemetry and no accounts.
 
+[0.2.0]: https://github.com/mata-2p/mirador/releases/tag/v0.2.0
 [0.2.0-rc.2]: https://github.com/mata-2p/mirador/releases/tag/v0.2.0-rc.2
 [0.2.0-rc.1]: https://github.com/mata-2p/mirador/releases/tag/v0.2.0-rc.1
 [0.1.0]: https://github.com/mata-2p/mirador/releases/tag/v0.1.0

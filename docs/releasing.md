@@ -100,7 +100,8 @@ On the draft release (**Releases**), before publishing it:
 
 ## Release candidates
 
-A release candidate (`0.2.0-rc.1`) goes through the same steps, with three differences:
+A release candidate (`0.2.0-rc.1`) goes through the same steps, with three differences, plus one rule for the
+final version:
 
 - The workflow creates its draft as a pre-release, because the tag has a pre-release suffix, so the releases
   page keeps the last stable release as **Latest**. Before publishing, check that **Set as a pre-release** is
@@ -110,6 +111,9 @@ A release candidate (`0.2.0-rc.1`) goes through the same steps, with three diffe
 - No promotion PR: `scripts/bootstrap.sh` in main never pins a candidate. To try the install end to end, run a
   local copy of `bootstrap.sh` whose three pin lines carry the candidate's version and sums, in a clean
   container, as an ordinary user with a scratch home.
+- When the final version is cut, its `CHANGELOG.md` section folds in the candidates' sections and reads complete
+  against the previous stable version, with one line that names the candidates. The release workflow does not
+  read `CHANGELOG.md`: its notes carry only `SHA256SUMS`, the attestation command and the pin lines.
 
 ## The promotion PR
 

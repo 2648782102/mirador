@@ -1,6 +1,6 @@
 {
   "name": "mirador",
-  "version": "0.2.0-rc.2",
+  "version": "0.2.0",
   "private": true,
   "license": "Apache-2.0",
   "author": "Matías Barría (https://github.com/mata-2p)",
